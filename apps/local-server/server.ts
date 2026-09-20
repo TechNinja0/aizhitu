@@ -18,6 +18,7 @@ import {
 } from "../../packages/document-core/index.ts";
 import { Renderer, checkOptions } from "../../packages/render-worker/index.ts";
 import { Jobs } from "./jobs.ts";
+import { TemplateStore } from "./templates.ts";
 export async function startServer({
   port = 4317,
   dev = false,
@@ -57,13 +58,14 @@ export async function startServer({
   );
   const renderer = new Renderer(engine.origin);
   const jobs = new Jobs(renderer);
+  const templates = new TemplateStore(dataDirectory);
   const app = express();
   app.disable("x-powered-by");
   const token = randomBytes(32).toString("hex");
   let origin = "";
   let publicOrigin = "";
   const aiOwners = new Map<string, { owner: string; documentId?: string }>();
-  const exportOwners = new Map<string, string>();
+  const exportOwners = new Map<string, { owner: string; contentHash: string }>();
   const actor = (req: any): Actor => req.actor;
   const admin = (req: any) => {
     if (!actor(req).admin)
@@ -149,6 +151,55 @@ export async function startServer({
         .json({ error: (e as Error).message });
     }
   };
+  app.get(
+    "/api/templates",
+    aiRoute((req) => templates.list(actor(req).id)),
+  );
+  app.post(
+    "/api/templates",
+    aiRoute(async (req) => {
+      const doc =
+        typeof req.body?.xml === "string" ? validate(req.body.xml) : undefined;
+      if (!doc?.ok) throw new HttpError(422, "请提供有效图稿");
+      const exported = exportOwners.get(req.body.previewJobId),
+        job = jobs.jobs.get(req.body.previewJobId);
+      if (
+        exported?.owner !== actor(req).id ||
+        exported.contentHash !== doc.contentHash ||
+        job?.status !== "succeeded" ||
+        job.options.format !== "png" ||
+        !job.result ||
+        job.options.selection?.length ||
+        job.options.embedSource
+      )
+        throw new HttpError(409, "预览与图稿不匹配或已过期，请重新生成预览");
+      return templates.create(
+        actor(req).id,
+        req.body,
+        doc.xml!,
+        await readFile(job.result.path),
+      );
+    }),
+  );
+  app.patch(
+    "/api/templates/:id",
+    aiRoute((req) => templates.update(req.params.id, actor(req).id, req.body)),
+  );
+  app.delete(
+    "/api/templates/:id",
+    aiRoute((req) => templates.remove(req.params.id, actor(req).id)),
+  );
+  app.post(
+    "/api/templates/:id/instantiate",
+    aiRoute((req) =>
+      templates.instantiate(
+        req.params.id,
+        actor(req).id,
+        req.body?.title,
+        req.body?.metadata,
+      ),
+    ),
+  );
   app.get(
     "/api/ai/settings",
     aiRoute(async (req) => {
@@ -301,7 +352,7 @@ export async function startServer({
       for (const id of exportOwners.keys())
         if (!jobs.jobs.has(id)) exportOwners.delete(id);
       const id = jobs.add(doc.xml!, req.body.options);
-      exportOwners.set(id, actor(req).id);
+      exportOwners.set(id, { owner: actor(req).id, contentHash: doc.contentHash! });
       res.status(202).json({ jobId: id });
     } catch (e) {
       res
@@ -310,7 +361,7 @@ export async function startServer({
     }
   });
   app.get("/api/jobs/:id", (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id)) !== actor(req).id)
+    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
       return void res.status(404).end();
     jobs.cleanup();
     const j = jobs.jobs.get(req.params.id);
@@ -325,7 +376,7 @@ export async function startServer({
     });
   });
   app.get("/api/jobs/:id/result", (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id)) !== actor(req).id)
+    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
       return void res.status(404).end();
     const j = jobs.jobs.get(req.params.id);
     if (j?.status !== "succeeded" || !j.result)
@@ -333,7 +384,7 @@ export async function startServer({
     res.type(j.result.mime).sendFile(j.result.path);
   });
   app.delete("/api/jobs/:id", async (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id)) !== actor(req).id)
+    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
       return void res.status(404).end();
     res.status((await jobs.cancel(String(req.params.id))) ? 204 : 404).end();
   });
@@ -374,6 +425,7 @@ export async function startServer({
     );
     s.on("error", reject);
   }).catch(async (error) => {
+    templates.close();
     await jobs.close();
     await vite?.close();
     await new Promise<void>((resolve) => engine.server.close(() => resolve()));
@@ -390,6 +442,7 @@ export async function startServer({
     jobs,
     server,
     close: async () => {
+      templates.close();
       await ai.close();
       workspace?.close();
       await jobs.close();

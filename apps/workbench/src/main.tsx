@@ -5,7 +5,8 @@ import {DocumentTools} from "./DocumentTools";
 import {AIChat} from "./AIChat";
 import {CandidateReview} from "./CandidateReview";
 import { TemplatePicker } from "./TemplatePicker";
-import { templateXml, type DiagramTemplate } from "../../../packages/diagram-templates";
+import { resolveTemplateXml, type TemplateChoice } from "./template-library";
+import { SaveTemplate } from "./SaveTemplate";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Bridge } from "./bridge";
@@ -187,7 +188,7 @@ function App() {
     new Bridge(() => frame.current, boot.editorOrigin),
   ).current;
   const [canvasZoom, setCanvasZoom] = useState(1);
-  const [canvasInsets, setCanvasInsets] = useState<{right:number;bottom:number}>();
+  const [canvasInsets, setCanvasInsets] = useState<{right:number;bottom:number;sidebar?:{left:number;width:number;bottom:number}}>();
   const [ready, setReady] = useState(false),
     [name, setName] = useState("订单服务架构.drawio"),
     [dirty, setDirty] = useState(false),
@@ -220,6 +221,8 @@ function App() {
     [activeReview, setActiveReview] = useState<string>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [fillTemplateOpen, setFillTemplateOpen] = useState(false);
   const [aiOpen,setAiOpen] = useState(false), [aiSettings,setAiSettings]=useState(false);
   const [canUndo, setCanUndo] = useState(false),
     [canRedo, setCanRedo] = useState(false);
@@ -300,12 +303,12 @@ function App() {
         showError(e);
       }
   }
-  async function createFromTemplate(template: DiagramTemplate | null, title: string) {
+  async function createFromTemplate(template: TemplateChoice | null, title: string) {
     // Browsing is non-destructive; ask about unsaved edits only after choosing Create.
     setTemplateOpen(false);
     await guard(async () => {
       const fileName = /\.drawio$/i.test(title) ? title : title + ".drawio";
-      await load(templateXml(template, title), fileName);
+      await load(await resolveTemplateXml(template, title), fileName);
       if (shared.id) return;
       if (template) {
         savedRevision.current = -1;
@@ -317,6 +320,23 @@ function App() {
       }
       setStatus(template ? `已从「${template.name}」创建 · 请保存图稿` : "空白画布已创建");
     });
+  }
+  async function fillFromTemplate(template: TemplateChoice | null) {
+    if (!template) return;
+    if (shared.id && !shared.editing) await shared.acquire();
+    // Acquiring a shared lease reloads the latest server state; recheck emptiness afterward.
+    const current = await bridge.invoke("snapshot");
+    if (current.counts.nodes || current.counts.edges) throw Error("当前画布已有内容，未应用模板。请关闭浮窗后检查图稿。");
+    const checked = await (await api("validate", { xml: await resolveTemplateXml(template, state.current.name, current.metadata) })).json();
+    const result = await bridge.invoke("applyCandidate", {
+      xml: checked.xml, expectedRevision: current.revision, documentId: current.metadata.documentId,
+    });
+    applySnapshot(result);
+    state.current.dirty = true;
+    setDirty(true);
+    setFillTemplateOpen(false);
+    await bridge.invoke("zoom", { action: "fit" });
+    setToast(`已应用「${template.name}」，可一步撤销`);
   }
   async function save() {
     const epoch=loadEpoch.current, filename=state.current.name;
@@ -414,7 +434,7 @@ function App() {
             }
           }
         }
-        if (d.event === "viewportBounds") setCanvasInsets({right:d.right,bottom:d.bottom});
+        if (d.event === "viewportBounds") setCanvasInsets({right:d.right,bottom:d.bottom,sidebar:d.sidebar});
         if (d.event === "selection") setSelection(d.ids);
         if (d.event === "deleteRequested") setDeleteOpen(true);
         if (d.event === "saveRequested") { if (documentId()) await shared.save(); else await save(); }
@@ -629,6 +649,7 @@ function App() {
             保存副本
           </button>
           <button disabled={!ready} title="授权保存到本地文件，后续可直接写回；检测磁盘修改冲突" onClick={()=>void saveDirect()}>保存到文件</button>
+          <button disabled={!ready || counts.nodes === 0} onClick={() => setSaveTemplateOpen(true)}>保存为模板</button>
         </div>
         <span className="divider" />
         <div className="command-group">
@@ -698,6 +719,11 @@ function App() {
       <main className="workspace">
         <section className="canvas-shell" aria-label="绘图画布">
           <iframe title="结构化图形编辑器" ref={frame} src={boot.editorUrl} />
+          {ready && meta && counts.nodes === 0 && counts.edges === 0 && canvasInsets?.sidebar && canvasInsets.sidebar.width > 80 && (
+            <div className="empty-canvas-templates" style={{left:canvasInsets.sidebar.left,width:canvasInsets.sidebar.width,bottom:canvasInsets.sidebar.bottom}}>
+              <button onClick={() => setFillTemplateOpen(true)}><span aria-hidden="true">▦</span>选择模板<span aria-hidden="true">↗</span></button>
+            </div>
+          )}
           {ready && canvasInsets && (
             <div className="canvas-zoom" role="group" aria-label="画布缩放" style={{right:canvasInsets.right+16,bottom:canvasInsets.bottom+16}}>
               {([['out','缩小画布','−'],['reset','恢复 100% 缩放',`${Math.round(canvasZoom*100)}%`],['in','放大画布','+'],['fit','适应画布','适应']] as const).map(([action,label,text]) => <button key={action} aria-label={label} title={label} disabled={!ready} onClick={()=>void bridge.invoke("zoom",{action}).then(r=>setCanvasZoom(r.scale)).catch(showError)}>{text}</button>)}
@@ -1004,7 +1030,9 @@ function App() {
           if (f) void pickImage(f, false).catch(showError);
         }}
       />
+      {saveTemplateOpen && <SaveTemplate bridge={bridge} api={api} name={name} onClose={() => setSaveTemplateOpen(false)} onSaved={() => {setSaveTemplateOpen(false);setToast("已保存到我的模板，新建图稿或选择模板时可复用");}} />}
       {templateOpen && <TemplatePicker onClose={() => setTemplateOpen(false)} onCreate={createFromTemplate} />}
+      {fillTemplateOpen && <TemplatePicker mode="fill" initialName={name} onClose={() => setFillTemplateOpen(false)} onCreate={fillFromTemplate} />}
       {exportOpen && (
         <Modal
           title="导出图稿"

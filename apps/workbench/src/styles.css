@@ -9,6 +9,25 @@
   --green: #315c45;
   --paper: #fcfdfb;
 }
+.empty-canvas-templates {
+  position: absolute;
+  z-index: 2;
+  padding: 12px;
+  background: #fafbf9;
+  border-top: 1px solid #e1e6df;
+  border-right: 1px solid #e1e6df;
+}
+.empty-canvas-templates button {
+  width: 100%;
+  min-height: 38px;
+  justify-content: flex-start;
+  gap: 9px;
+  border: 1px solid #cddccf;
+  color: #315c45;
+  background: #edf3e9;
+}
+.empty-canvas-templates button > span:last-child { margin-left: auto; color: #82947b; }
+.template-current-file { color: #65785f; font-size: 12px; overflow-wrap: anywhere; }
 * {
   box-sizing: border-box;
 }

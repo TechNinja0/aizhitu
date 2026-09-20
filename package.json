@@ -16,7 +16,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "tsx tests/e2e.ts",
-    "test:templates": "tsx --test tests/templates.test.ts && tsx tests/templates-e2e.ts",
+    "test:templates": "tsx --test tests/templates.test.ts tests/personal-templates.test.ts && tsx tests/templates-e2e.ts && tsx tests/personal-templates-e2e.ts",
     "test:capabilities": "tsx tests/capabilities.ts",
     "diagram": "tsx packages/cli/main.ts",
     "setup": "node scripts/setup.mjs",

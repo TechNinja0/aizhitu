@@ -1,5 +1,8 @@
 // Original, editable diagrams informed by the linked public references.
 // XML and SVG previews share geometry, labels and colors; no remote assets are needed.
+import type { Metadata } from "../document-core/types";
+import { advancedTemplates } from "./advanced";
+import { architectureTemplates } from "./architecture";
 export const categories = [
   { id: "architecture", name: "系统架构", symbol: "▤" },
   { id: "flow", name: "业务流程", symbol: "⑂" },
@@ -40,6 +43,7 @@ export type DiagramTemplate = {
   source: { name: string; url: string };
   nodes: TemplateNode[];
   edges: TemplateEdge[];
+  complexity?: "advanced";
 };
 const palette: Record<Tone, [string, string]> = {
   green: ["#e6f1e9", "#6c9479"],
@@ -76,6 +80,8 @@ const azure = {
   url: "https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/",
 };
 export const templates: DiagramTemplate[] = [
+  ...architectureTemplates,
+  ...advancedTemplates,
   {
     id: "layered",
     name: "经典分层架构",
@@ -486,6 +492,7 @@ function route(t: DiagramTemplate, edge: TemplateEdge) {
 export function templateXml(
   template: DiagramTemplate | null,
   title: string,
+  metadata?: Metadata,
 ): string {
   const nodes =
     template?.nodes
@@ -496,7 +503,7 @@ export function templateXml(
           box: "rounded=1;arcSize=12;",
           decision: "rhombus;",
           terminal: "rounded=1;arcSize=50;",
-          database: "shape=cylinder;size=12;",
+          database: "shape=cylinder;size=0.15;",
           lane: "swimlane;horizontal=1;startSize=38;container=1;collapsible=0;swimlaneFillColor=#ffffff;",
         }[node.shape];
         const style = `${shape}whiteSpace=wrap;html=0;fillColor=${fill};strokeColor=${stroke};fontColor=#263e33;fontSize=15;fontFamily=Noto Sans SC;strokeWidth=1.5;`;
@@ -512,11 +519,16 @@ export function templateXml(
         return `<mxCell id="edge-${i}" value="${escape(edge.label || "")}" edge="1" parent="1" source="${edge.source}" target="${edge.target}" style="edgeStyle=none;noEdgeStyle=1;rounded=0;html=0;endArrow=block;endFill=1;endSize=7;strokeColor=#83948a;strokeWidth=1.5;fontColor=#526157;fontFamily=Noto Sans SC;fontSize=13;labelBackgroundColor=#ffffff;exitX=${exitX};exitY=${exitY};entryX=${entryX};entryY=${entryY};${edge.dashed ? "dashed=1;" : ""}"><mxGeometry relative="1" as="geometry"><Array as="points">${r.via.map((p) => `<mxPoint x="${p.x}" y="${p.y}"/>`).join("")}</Array></mxGeometry></mxCell>`;
       })
       .join("") || "";
-  // Validation assigns a new document identity on every creation.
-  return `<mxfile compressed="false"><diagram id="page-1" name="${escape(title)}"><mxGraphModel grid="1" gridSize="10" page="0"><root><mxCell id="0"/><mxCell id="1" parent="0"/>${nodes}${edges}</root></mxGraphModel></diagram></mxfile>`;
+  // New documents get an identity during validation; filling an existing draft retains it.
+  const root = metadata
+    ? `<object id="0" dw_meta="${escape(JSON.stringify(metadata))}"><mxCell/></object>`
+    : '<mxCell id="0"/>';
+  return `<mxfile compressed="false"><diagram id="page-1" name="${escape(title)}"><mxGraphModel grid="1" gridSize="10" page="0"><root>${root}<mxCell id="1" parent="0"/>${nodes}${edges}</root></mxGraphModel></diagram></mxfile>`;
 }
 export function templateSvg(template: DiagramTemplate): string {
   const routes = template.edges.map((edge) => route(template, edge));
+  const minX=Math.min(0,...template.nodes.map(n=>n.x),...routes.flatMap(r=>r.points.map(p=>p.x)))-15;
+  const minY=Math.min(0,...template.nodes.map(n=>n.y),...routes.flatMap(r=>r.points.map(p=>p.y)))-15;
   const width =
     Math.max(
       ...template.nodes.map((n) => n.x + n.w),
@@ -558,7 +570,7 @@ export function templateSvg(template: DiagramTemplate): string {
       return `<path d="${points.map((p, j) => `${j ? "L" : "M"}${p.x},${p.y}`).join(" ")}" fill="none" stroke="#83948a" stroke-width="1.5" marker-end="url(#arrow)"${edge.dashed ? ' stroke-dasharray="5 4"' : ""}/>${edge.label ? `<text x="${labelAt.x}" y="${labelAt.y - 7}" text-anchor="middle" font-family="Noto Sans SC, sans-serif" font-size="13" fill="#526157" stroke="#fff" stroke-width="5" paint-order="stroke">${escape(edge.label)}</text>` : ""}`;
     })
     .join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -15 ${width + 15} ${height + 15}"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#83948a"/></marker></defs>${template.nodes
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${width - minX} ${height - minY}"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#83948a"/></marker></defs>${template.nodes
     .filter((n) => n.shape === "lane")
     .map(nodeSvg)
     .join("")}${edges}${template.nodes

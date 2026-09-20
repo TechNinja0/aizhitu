@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { Bridge } from "./bridge";
 import "./shared.css";
 import { TemplatePicker } from "./TemplatePicker";
-import { templateXml } from "../../../packages/diagram-templates";
+import { resolveTemplateXml } from "./template-library";
 
 import { uuid, copyText } from "./uuid";
 export type Actor = { id: string; name: string; admin: boolean };
@@ -242,7 +242,7 @@ function Library({
           新建共享图稿
         </button>
         {templateOpen && <TemplatePicker initialName={name === "未命名图稿" ? "" : name} onClose={() => setTemplateOpen(false)} onCreate={async (template, title) => {
-          const d = await workspaceApi("documents", { name: title, xml: templateXml(template, title) });
+          const d = await workspaceApi("documents", { name: title, xml: await resolveTemplateXml(template, title) });
           location.assign("/documents/" + d.id);
         }} />}
         <label className="shared-import">
@@ -609,21 +609,25 @@ export function useSharedDocument(options: Options) {
       workspaceContext.lockToken = undefined;
     };
   }, [id, options.ready]);
-  const run = async (fn: () => Promise<void>) => {
-    if (operation.current) return;
+  const run = async (fn: () => Promise<void>, propagateError = false) => {
+    if (operation.current) {
+      if (propagateError) throw Error("正在处理其他操作，请稍后重试");
+      return;
+    }
     operation.current = true;
     setBusy(true);
     try {
       await pollFinished.current;
       await fn();
     } catch (e) {
+      if (propagateError) throw e;
       options.onError(e);
     } finally {
       operation.current = false;
       setBusy(false);
     }
   };
-  const acquire = () =>
+  const acquire = (propagateError = false) =>
     run(async () => {
       const requestedAt = Date.now();
       const l = await workspaceApi(`documents/${id}/lock`, {
@@ -650,7 +654,7 @@ export function useSharedDocument(options: Options) {
         }).catch(() => {});
         throw e;
       }
-    });
+    }, propagateError);
   const release = () =>
     run(async () => {
       if (saving.current) throw Error("正在保存，请稍后结束编辑");
@@ -826,6 +830,7 @@ export function useSharedDocument(options: Options) {
   return {
     id,
     editing,
+    acquire: () => acquire(true),
     panel,
     save,
     doc,

@@ -603,7 +603,9 @@
     // Keep host overlays inside the visible drawing area, clear of panels and scrollbars.
     const reportViewport = () => {
       const container = graph.container, rect = container.getBoundingClientRect();
+      const sidebar = ui.sidebarContainer.getBoundingClientRect();
       send({event: "viewportBounds",
+        sidebar: {left: sidebar.left, width: sidebar.height > 0 ? sidebar.width : 0, bottom: Math.max(0, innerHeight - sidebar.bottom)},
         right: Math.max(0, innerWidth - rect.left - container.clientLeft - container.clientWidth),
         bottom: Math.max(0, innerHeight - rect.top - container.clientTop - container.clientHeight)});
     };
