@@ -1,6 +1,6 @@
 # AI智图 · 技术设计
 
-版本：1.2.1 · 更新：2026-09-20。对应 [当前产品规格](../product/PRD.md)。详细 CLI 契约见 [LOCAL_AI_DESIGN.md](LOCAL_AI_DESIGN.md)，历史接口说明见 [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)。
+版本：1.6.0 · 更新：2026-09-20。对应 [当前产品规格](../product/PRD.md)。详细 CLI 契约见 [LOCAL_AI_DESIGN.md](LOCAL_AI_DESIGN.md)，历史接口说明见 [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)。
 
 ## 架构
 
@@ -23,20 +23,22 @@ Node.js 最低 22.22；依赖和上游资源固定版本。默认监听 127.0.0.
 默认启动入口开启共享模式，`/` 为文件库，`/documents/:id` 为持久化文档，`/local` 保留单机临时画布。`startServer` 的测试兼容默认仍是本地编辑器，测试共享能力需传 `shared: true`。
 
 - `WorkspaceStore` 使用 `node:sqlite`，WAL 与同步事务保存文档、版本、身份会话和租约；所有图稿经过原校验器，新导入强制分配新 documentId。
-- `POST /api/session` 仅接收用户名，每次加入创建独立随机身份与 token，不按名称接管已有身份。浏览器保存 token，数据库仅存 SHA-256 摘要，无定期到期。`PATCH /api/session` 改名并同步当前租约名称，身份 ID 与文件归属保持不变。有效旧会话保留身份并撤销远程管理员角色；过期会话不复活。旧 accounts/settings 表保留但不再读取，新数据库不创建。管理员 bootstrap token 仅向服务电脑的本机地址与 loopback 连接提供。所有成员共用文件库，删除/恢复仅创建者或管理员，AI 设置只允许管理员。
+- 固定账号保存在 `workspace_users`，唯一登录名与显示姓名分开；密码采用随机盐 scrypt。`POST /api/auth/register` 注册、`POST /api/auth/login`（兼容 `/api/session`）验证密码；旧姓名单独输入不能再创建或认领身份。旧会话通过 `/api/account/setup` 补设账号并保留原 ID。管理员 bootstrap token 仍仅向本机地址与 loopback 请求提供。
+- 新建页面 `/new/:id` 的初始空白/模板保留在当前标签页 sessionStorage，按画布内容 revision 与初始名称判断修改；视口和选区事件不触发服务器创建。首次修改或明确保存才调用 `POST /api/documents` 创建私有文件（`draft=0`），忽略客户端试图直接公开的字段。首次提交冻结画布并固化 payload；请求标识按用户持久化在 `document_creations`，响应丢失后重试返回原文件；同一标识提交不同内容会返回冲突，不覆盖另一标签页。400/422 明确校验失败不会写入，解除冻结后允许修正；网络响应不明时保持原提交并提供重试和下载。
+- 启动时把旧 `draft=1` 文件改为私有普通文件，不修改内容、版本、创建者、时间和回收站状态；列表仅保留全部文件/回收站。列表重命名与 `/api/documents/batch-trash` 必须没有有效编辑锁；批量最多 100 份，`BEGIN IMMEDIATE` 中先全量验证再写入，任何失败整体回滚。恢复回到全部文件。
 - 编辑锁绑定浏览器身份、页面 client ID 和随机 lock token，默认 30 秒租约，客户端每 2 秒续约。租约存 SQLite，多个数据库连接也无法抢到同一文档的锁。页面退出使用 keepalive 尝试释放，异常退出依靠租约到期。
-- 每次写入在 `BEGIN IMMEDIATE` 事务内验证有效租约和期望服务器 revision，原子更新文档、递增版本、写入历史。409 表示旧版本，423 表示无有效编辑权。服务器 revision 与画布本地 revision 分开管理。
+- 内容写入在 `BEGIN IMMEDIATE` 事务内验证有效租约和期望服务器 revision，原子更新文档、递增版本、写入历史。409 表示旧版本，423 表示无有效编辑权。服务器 revision 与画布本地 revision 分开管理。
 - 有修改且持有锁时每 2 秒自动保存；只读页面每 2 秒读取轻量状态，发现 revision 变化后加载完整图稿。没有逐笔实时广播；断线或冲突保留当前未同步内容，不覆盖。
 - 适配器 `setReadOnly` 禁用图形编辑、原生菜单/快捷键和修改类桥接命令，仍允许读取快照、查看与导出。服务器写入校验是最终边界。
 - 每份文档保留最近 50 个服务器版本。删除为软删除，恢复原图或历史内容均递增版本。备份应停止服务后复制整个数据目录。
-- 共享 AI 按服务串行排队，最多 8 个活跃任务，任务列表、读取与取消按浏览器身份隔离，共享页列表再按文档过滤。队列和结果不跨服务重启持久化。
+- 共享 AI 按服务串行排队，最多 8 个活跃任务，任务列表、读取与取消按账号隔离，共享页列表再按文档过滤。队列和结果不跨服务重启持久化。
 - 独立画布 origin 继续隔离编辑器与主站。局域网 HTTP 兼容 UUID 随机生成、摘要和复制链接的降级路径；浏览器直接写本地文件不可用时下载副本。
 
 部署和使用见 [局域网共享指南](../LAN_WORKSPACE.md)。
 
 ## 文档模型与身份
 
-主文件为原生单页 `.drawio`，导入兼容标准压缩与未压缩 XML。根对象 `dw_meta` 持有 profileVersion、documentId、generationMode、reviewItems 和可选来源摘要。profile 保持 1.0；产品版本独立为 1.2.1。
+主文件为原生单页 `.drawio`，导入兼容标准压缩与未压缩 XML。根对象 `dw_meta` 持有 profileVersion、documentId、generationMode、reviewItems 和可选来源摘要。profile 保持 1.0；产品版本独立为 1.6.0。
 
 校验器禁止 DTD、可执行内容、外部图像/链接和不支持的形状/样式。字体规范化为本地 Noto Sans SC。`fileHash` 表示原始输入，`contentHash` 表示规范化后的文档内容：
 
@@ -99,3 +101,22 @@ PNG/SVG 整图或选区、PDF 单页整图。导出由独立 Chromium 执行，�
 `npm run test:shared` 用不同浏览器上下文与同一浏览器身份多标签页模拟局域网协作；`tests/shared-workspace.test.ts` 验证存储、租约、并发、身份与 AI 隔离。`npm run check` 包含单元、实际内核交互、性能样本、图片/PDF、AI 模拟集成、版本/保存竞态、预览与主题回归。真实 CLI 检查单独执行。`.github/workflows/check.yml` 不需要 AI 账号，远程运行结果须在首次推送后检查。
 
 分享包按白名单生成，包含代码、构建、编辑器、字体、许可证、示例和文档；不含本机配置、账号、node_modules、产物日志或个人图稿。首次启动安装依赖/Chromium；目前验证以 macOS arm64 为主，不宣称 Windows/Linux 安装链路已通过。
+
+## v1.4 文件分享权限
+
+`documents.visibility` 取 `private/selected/everyone`，默认 private；`accessRevision` 从 1 开始，与内容 `revision` 独立。`document_members(documentId,memberId)` 复合主键记录成员授权。老库迁移一次性默认 private 并清除未授权租约，内容与版本保持。后续重启不重置权限。
+
+- `GET /api/members`：已认证成员可获取有效成员的 ID 与显示名称，不含 token 或摘要。
+- `GET /api/documents/:id/sharing`：必须已有访问权；仅创建者/管理员返回收件人列表，其他成员仅获得自己的访问范围与不可管理状态。
+- `PUT /api/documents/:id/sharing`：仅创建者/管理员；提交 visibility、recipients、accessRevision。BEGIN IMMEDIATE 内检查文档状态、权限版本和所有目标成员，整体更新授权，清除失去访问权的租约。失效权限版本返回 409，空 selected / 无效身份返回 400。
+- `POST /api/documents/:id/publish` 保留兼容路径，只将草稿保存到文件库，不开放访问。
+- 列表 SQL 与 `WorkspaceStore.access/allowed` 使用相同规则；`/api/documents/:id` 的路由中间件保护状态、正文、历史、锁与管理接口，`requireLock` 再次校验访问权限以保护保存、心跳和文档 AI 操作。未授权统一返回 404，避免泄露文档是否存在。
+- 客户端只能通过明确保存分享设置开放访问，复制链接不修改授权。轮询收到 403/404 后移除编辑器，重新授权后需刷新。此机制不远程擦除已经获取的本地副本。
+
+## v1.5 账号与管理
+
+账号、会话和文档归属分开存储；退出或密码重置只撤销凭证，不删除用户记录。账号密码操作在异步 scrypt 完成后重新检查用户版本与状态，避免停用/重置竞态。登录、注册、补设和重置使用独立事务；唯一索引避免并发重复登录名，一次性凭证在同一事务校验、消费并换发会话。密码设置与会话期限见 [账号指南](../ACCOUNTS.md)。
+
+`GET/POST /api/admin/users`、`PATCH/DELETE /api/admin/users/:id`、`POST .../reset` 与 `POST .../transfer` 仅本机管理员可用。管理操作携带用户 revision；转移仅限停用来源与已设置账号的启用目标，事务内检查全部文档无编辑锁，保持内容版本、原创建人和历史，更新 owner、visibility 与 accessRevision。个人模板单独存储且不随图稿转移，存在模板时拒绝删除用户。删除保留 tombstone 与登录名占用，撤销分享成员项。管理事件写入 account_audit。
+
+前端会话轮询约 10 秒，401 时移除旧页面并显示账号入口；临时网络错误不删除凭证。`--tls-cert`/`--tls-key` 同时启用工作台与画布 HTTPS；渲染器仅为其受限的本机 HTTPS origin 允许内部证书，不改变系统信任或访问者证书验证。

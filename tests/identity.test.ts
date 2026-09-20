@@ -63,12 +63,13 @@ test("升级保留旧有效身份、移除远程管理员权限、不复活已�
       id: "old-owner",
       name: "旧名字",
       admin: false,
+      login: null, needsSetup: true,
     });
     assert.equal(store.get(doc.id).owner, "old-owner");
     assert.equal(store.actor("expired"), undefined);
     store.close();
     store = new WorkspaceStore(dir, 30000, () => now + 365 * 86400000);
-    assert.equal(store.actor("old-admin")?.id, "old-owner");
+    assert.equal(store.actor("old-admin"), undefined, "旧有限期会话不能在重启后被无限延长");
   } finally {
     store.close();
     await fs.rm(dir, { recursive: true, force: true });

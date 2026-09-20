@@ -12,6 +12,7 @@ const lanHost = Object.values(os.networkInterfaces())
 assert.ok(lanHost, "需要局域网地址验证 HTTP 复制");
 const server = await startServer({
   port: 0,
+  workbenchDirectory: process.env.ZHITU_TEST_WORKBENCH,
   shared: true,
   lanHost,
   dataDirectory: directory,
@@ -21,10 +22,10 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 try {
-  const member = server.workspace!.enter("分享测试");
+  const member = await server.workspace!.accounts.register({login:"sharetest", name:"分享测试", password:"Account-testing-2026-safe"});
   const doc = server.workspace!.create("分享测试图稿", undefined, member.actor);
   await page.goto(server.publicOrigin);
-  await page.getByLabel("用户名", { exact: true }).waitFor();
+  await page.getByLabel("登录名", { exact: true }).waitFor();
   await page.evaluate(
     (token) => localStorage.setItem("zhitu-session", token),
     member.token,
@@ -35,6 +36,7 @@ try {
   assert.equal(await page.evaluate(() => window.isSecureContext), false);
   const share = page.getByRole("button", { name: "分享链接", exact: true });
   await share.click();
+  await page.getByRole("button", { name: "复制链接", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "分享图稿" });
   await dialog.waitFor({ timeout: 5000 });
   assert.equal(await dialog.getByLabel("图稿链接").inputValue(), link);
@@ -62,17 +64,21 @@ try {
     value: { writeText: () => Promise.reject(new Error("denied")) }
   })`);
   await share.click();
+  await page.getByRole("button", { name: "复制链接", exact: true }).click();
   await dialog.getByText("链接已复制，可以发送给同事").waitFor();
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   console.log("PASS 剪贴板接口拒绝后使用备用复制方式");
 
   await page.evaluate("document.execCommand = () => false");
   await share.click();
+  await page.getByRole("button", { name: "复制链接", exact: true }).click();
   await dialog.getByText("自动复制未成功，请选中下方链接手动复制").waitFor();
   assert.equal(await dialog.getByLabel("图稿链接").inputValue(), link);
   await dialog.getByLabel("图稿链接").click();
   await page.waitForFunction(() => {
-    const input = document.querySelector("dialog input") as HTMLInputElement;
+    const input = document.querySelector(
+      "dialog input[readonly]",
+    ) as HTMLInputElement;
     return input.selectionEnd! - input.selectionStart! === input.value.length;
   });
   assert.equal(

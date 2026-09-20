@@ -1,3 +1,4 @@
+import { registerPage } from "./account-fixtures.ts";
 import { chromium, type Page } from "playwright";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -14,6 +15,7 @@ const lanHost =
     .find((n) => n?.family === "IPv4" && !n.internal)?.address || "127.0.0.1";
 const server = await startServer({
   port: 0,
+  workbenchDirectory: process.env.ZHITU_TEST_WORKBENCH,
   shared: true,
   lanHost,
   dataDirectory: directory,
@@ -47,14 +49,7 @@ const pass = (s: string) => {
 async function login(p: Page, name: string) {
   await p.goto(server.publicOrigin);
   await p.waitForLoadState("networkidle");
-  await p.getByLabel("用户名", { exact: true }).fill(name);
-  assert.equal(
-    await p.getByRole("textbox").count(),
-    1,
-    "入口仅一个用户名输入框",
-  );
-  assert.equal(await p.locator('input[type="password"]').count(), 0);
-  await p.getByRole("button", { name: "进入工作区" }).click();
+  await registerPage(p, name);
   await p.getByRole("heading", { name: "文件库", exact: true }).waitFor();
 }
 const frame = (p: Page) => p.frames().find((f) => f !== p.mainFrame())!;
@@ -129,17 +124,33 @@ try {
 
   if (lanHost !== "127.0.0.1")
     assert.equal(await a.evaluate(() => isSecureContext), false);
-  pass("局域网 HTTP 访问、只填用户名进入、非安全上下文兼容");
+  pass("局域网 HTTP 访问、固定账号注册与记住登录、非安全上下文兼容");
   await a.getByLabel("新图稿名称").fill("空白共享图");
-  await a.getByRole("button", { name: "新建共享图稿" }).click();
+  await a.getByRole("button", { name: "新建图稿" }).click();
   await a.getByRole("button", { name: "创建空白画布", exact: true }).click();
   await a.getByText("0 个节点 · 0 条连线").waitFor();
-  assert.match(a.url(), /\/documents\//);
+  assert.match(a.url(), /\/new\//);
   await a.getByRole("link", { name: "← 文件库" }).click();
   await a
-    .getByLabel("导入共享图稿")
+    .getByLabel("导入图稿")
     .setInputFiles("fixtures/examples/architecture.drawio");
   await a.getByText("9 个节点 · 6 条连线").waitFor();
+  await a.getByRole("button", { name: "分享链接", exact: true }).waitFor();
+  await a.getByRole("button", { name: "分享链接", exact: true }).click();
+  const permissions = a.getByRole("dialog", { name: "分享图稿", exact: true });
+  await permissions
+    .getByRole("radio", { name: "所有成员", exact: true })
+    .check();
+  await permissions
+    .getByRole("button", { name: "保存分享权限", exact: true })
+    .click();
+  await permissions
+    .getByText("分享权限已保存，可以复制链接发送给已授权成员", { exact: true })
+    .waitFor();
+  await permissions.getByRole("button", { name: "关闭", exact: true }).click();
+
+  await a.getByRole("button", { name: "结束编辑", exact: true }).click();
+  await a.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
   const url = a.url();
   await open(b, url);
   await a.screenshot({ path: "artifacts/shared-readonly.png" });
@@ -223,13 +234,16 @@ try {
   await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
   await a.getByRole("button", { name: "移入回收站", exact: true }).click();
   await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();
-  await b.getByText(/文档不存在或已移入回收站/).waitFor();
+  await b.getByRole("heading", { name: "无法访问此图稿" }).waitFor();
   await a.getByRole("button", { name: "回收站", exact: true }).click();
   await a.getByRole("button", { name: "恢复文件", exact: true }).click();
   await a.getByRole("button", { name: "全部文件", exact: true }).click();
-  await a.getByRole("link", { name: "打开图稿 →" }).first().waitFor();
+  await a
+    .locator(".shared-row:not(.shared-table-head) a[href]")
+    .first()
+    .waitFor();
   await a.screenshot({ path: "artifacts/shared-library.png", fullPage: true });
-  await b.getByRole("button", { name: "加载最新版本", exact: true }).click();
+  await open(b, url);
   await waitLabel(b, "乙接管后保存");
   pass("创建者删除、其他页面收到删除状态、回收站恢复后继续访问");
   const pdf = b.waitForEvent("download", { timeout: 40000 });

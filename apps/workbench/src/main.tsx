@@ -1,3 +1,4 @@
+import { startNewDocument, useNewDocument } from "./NewDocument";
 import { SharedRoot, useSharedDocument, workspaceContext, workspaceHeaders, workspaceApi, documentId } from "./SharedWorkspace";
 import { uuid, copyText } from "./uuid";
 import { StyleTools } from "./StyleTools";
@@ -242,7 +243,8 @@ function App() {
     initialised = useRef(false);
   const showError = (e: unknown) => setError((e as Error).message || String(e));
   const shared = useSharedDocument({ bridge, ready, state, savedRevision, load: (xml, name) => load(xml, name, true), setDirty, setName, onError: showError });
-  const editable = ready && (!shared.id || shared.editing);
+  const pendingDocument = useNewDocument({ bridge, state, load: (xml, title) => load(xml, title, true), setDirty });
+  const editable = ready && !pendingDocument.frozen && (!shared.id || shared.editing);
   function applySnapshot(s: any) {
     if(s.zoom) setCanvasZoom(s.zoom);
     state.current.xml = s.xml;
@@ -255,9 +257,8 @@ function App() {
     setCanRedo(!!s.canRedo);
   }
   async function load(xml: string, newName: string, internal = false) {
-    if (shared.id && !internal) {
-      const d = await workspaceApi("documents", { name: newName, xml });
-      location.assign("/documents/" + d.id); return;
+    if (boot.shared && (shared.id || pendingDocument.active) && !internal) {
+      startNewDocument(newName, xml); return;
     }
     loadEpoch.current++;
     directFile.current = null;
@@ -309,7 +310,7 @@ function App() {
     await guard(async () => {
       const fileName = /\.drawio$/i.test(title) ? title : title + ".drawio";
       await load(await resolveTemplateXml(template, title), fileName);
-      if (shared.id) return;
+      if (shared.id || pendingDocument.active) return;
       if (template) {
         savedRevision.current = -1;
         state.current.dirty = true;
@@ -328,6 +329,12 @@ function App() {
     const current = await bridge.invoke("snapshot");
     if (current.counts.nodes || current.counts.edges) throw Error("当前画布已有内容，未应用模板。请关闭浮窗后检查图稿。");
     const checked = await (await api("validate", { xml: await resolveTemplateXml(template, state.current.name, current.metadata) })).json();
+    if (pendingDocument.active && !pendingDocument.isDirty(current)) {
+      await pendingDocument.replaceSeed(checked.xml, state.current.name);
+      setFillTemplateOpen(false);
+      setToast(`已选择「${template.name}」，修改后自动保存`);
+      return;
+    }
     const result = await bridge.invoke("applyCandidate", {
       xml: checked.xml, expectedRevision: current.revision, documentId: current.metadata.documentId,
     });
@@ -350,7 +357,7 @@ function App() {
         : filename + ".drawio",
     );
     if(epoch!==loadEpoch.current)return false;
-    if (shared.id) { setToast("已下载副本；服务器保存状态不变"); const now = await bridge.invoke("snapshot"); return now.revision === s.revision && state.current.name === filename && epoch === loadEpoch.current; }
+    if (shared.id || pendingDocument.active) { setToast("已下载副本；服务器保存状态不变"); const now = await bridge.invoke("snapshot"); return now.revision === s.revision && state.current.name === filename && epoch === loadEpoch.current; }
     savedRevision.current = s.revision;
     const current = await bridge.invoke("snapshot");
     if(epoch!==loadEpoch.current)return false;
@@ -381,7 +388,7 @@ function App() {
       try{check();await stream.write(checked.xml);check();await stream.close();}catch(error){await stream.abort().catch(()=>{});throw error;}
       if(!unchanged())return;
       target.lastContent=checked.xml;directFile.current=target;
-      if (shared.id) { setToast(`已写入本地文件 ${target.handle.name}；服务器保存状态不变`); return; }
+      if (shared.id || pendingDocument.active) { setToast(`已写入本地文件 ${target.handle.name}；服务器保存状态不变`); return; }
       savedRevision.current=snap.revision;
       const current=await bridge.invoke("snapshot");if(!unchanged())return;
       applySnapshot(current);setDirty(current.revision!==snap.revision);
@@ -406,6 +413,7 @@ function App() {
           initialised.current = true;
           setReady(true);
           if (documentId()) { await bridge.invoke("setReadOnly", { value: true }); return; }
+          if (pendingDocument.active) { await pendingDocument.initialize(); return; }
           await openExample("architecture");
           const list = await allDrafts();
           setDrafts(list);
@@ -414,7 +422,7 @@ function App() {
         if (d.event === "editing") { state.current.dirty = true; setDirty(true); }
         if (d.event === "changed") {
           applySnapshot(d);
-          const changed = documentId() ? shared.isDirty(d) : d.revision !== savedRevision.current;
+          const changed = documentId() ? shared.isDirty(d) : pendingDocument.active ? pendingDocument.isDirty(d) : d.revision !== savedRevision.current;
           state.current.dirty = changed;
           setDirty(changed);
           if (changed && d.metadata?.documentId) {
@@ -437,7 +445,7 @@ function App() {
         if (d.event === "viewportBounds") setCanvasInsets({right:d.right,bottom:d.bottom,sidebar:d.sidebar});
         if (d.event === "selection") setSelection(d.ids);
         if (d.event === "deleteRequested") setDeleteOpen(true);
-        if (d.event === "saveRequested") { if (documentId()) await shared.save(); else await save(); }
+        if (d.event === "saveRequested") { if (documentId()) await shared.save(); else if (pendingDocument.active) await pendingDocument.save(true); else await save(); }
       } catch (err) {
         showError(err);
       }
@@ -580,6 +588,10 @@ function App() {
       meta?.source &&
       source.sha256 !== meta.source.sha256
     );
+  if (pendingDocument.missing) return <main className="shared-empty"><h1>未找到临时图稿</h1><p>新图稿尚未保存到服务器，请从原标签页继续，或返回文件库重新新建。</p><a href="/">返回文件库</a></main>;
+  if (shared.denied) return <main className="shared-empty"><h1>无法访问此图稿</h1>
+    <p>文件不存在、已删除或你尚未获得访问权限。请联系创建者设置分享权限。</p>
+    <a href="/">返回文件库</a></main>;
   return (
     <div className="app">
       <header className="topbar">
@@ -591,15 +603,15 @@ function App() {
         </div>
         <div className="file-heading">
           <input
-            disabled={!!shared.id && !shared.editing}
+            disabled={pendingDocument.frozen || (!!shared.id && !shared.editing)}
             aria-label="图稿文件名"
             value={name}
-            onChange={(e) => { setName(e.target.value); if (shared.id) { state.current.name = e.target.value; state.current.dirty = true; setDirty(true); } }}
+            onChange={(e) => { setName(e.target.value); if (shared.id || pendingDocument.active) { state.current.name = e.target.value; state.current.dirty = true; setDirty(true); } }}
             maxLength={120}
           />
           <span className={"save-state " + (dirty ? "unsaved" : "")}>
             <i />
-            {dirty ? "尚未保存" : shared.id ? "服务器图稿" : "本地图稿"}
+            {dirty ? "尚未保存" : shared.id ? "服务器图稿" : pendingDocument.active ? "尚未创建文件" : "本地图稿"}
           </span>
         </div>
         <div className="header-right">
@@ -627,7 +639,9 @@ function App() {
         </div>
       </header>
       {shared.panel}
-      {boot.shared && !shared.id && <div className="shared-document-bar"><a href="/">← 文件库</a><span>本地临时画布 · 保存到文件库后可与团队共享</span><button disabled={!ready} onClick={async () => { try { const snapshot = await bridge.invoke("snapshot"); const d = await workspaceApi("documents", { name, xml: snapshot.xml }); location.assign("/documents/" + d.id); } catch (e) { showError(e); } }}>保存到共享文件库</button></div>}
+      {pendingDocument.panel}
+      {pendingDocument.overlay}
+      {boot.shared && !shared.id && !pendingDocument.active && <div className="shared-document-bar"><a href="/">← 文件库</a><span>本地临时画布 · 主动保存后进入文件库，默认仅自己可见</span><button disabled={!ready} onClick={async () => { try { const snapshot = await bridge.invoke("snapshot"); const d = await workspaceApi("documents", { name, xml: snapshot.xml }); sessionStorage.setItem(`zhitu-edit:${d.id}`, "1"); location.assign("/documents/" + d.id); } catch (e) { showError(e); } }}>保存到文件库</button></div>}
       <nav className="commandbar" aria-label="文件与画布操作">
         <div className="command-group">
           <button

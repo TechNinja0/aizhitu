@@ -1,3 +1,4 @@
+import { Accounts } from "./accounts.ts";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, chmodSync } from "node:fs";
@@ -16,7 +17,14 @@ export class HttpError extends Error {
     super(message);
   }
 }
-export type Actor = { id: string; name: string; admin: boolean };
+export type Actor = {
+  id: string;
+  name: string;
+  admin: boolean;
+  login?: string | null;
+  needsSetup?: boolean;
+};
+export type Visibility = "private" | "selected" | "everyone";
 export type Lease = {
   owner: string;
   name: string;
@@ -27,6 +35,7 @@ export type Lease = {
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 export class WorkspaceStore {
   db: DatabaseSync;
+  accounts: Accounts;
   constructor(
     public directory: string,
     public leaseMs = 30_000,
@@ -53,13 +62,39 @@ export class WorkspaceStore {
           (SELECT name FROM sessions WHERE id=documents.owner LIMIT 1),
           CASE WHEN owner='local-admin' THEN '本机管理员' ELSE '历史创建者' END)`);
       }
+      if (!columns.some((column) => column.name === "draft"))
+        this.db.exec(
+          "ALTER TABLE documents ADD COLUMN draft INTEGER NOT NULL DEFAULT 0",
+        );
+      if (!columns.some((column) => column.name === "visibility")) {
+        this.db
+          .exec(`ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
+          ALTER TABLE documents ADD COLUMN accessRevision INTEGER NOT NULL DEFAULT 1;
+          DELETE FROM leases WHERE owner<>'local-admin' AND owner<>(SELECT owner FROM documents WHERE documents.id=leases.id);`);
+      }
+      this.db.exec(`CREATE TABLE IF NOT EXISTS document_members (
+        documentId TEXT NOT NULL REFERENCES documents(id), memberId TEXT NOT NULL,
+        PRIMARY KEY(documentId,memberId));`);
     });
-    // Preserve valid identities from the password-based release, but retire remote admin grants.
-    this.db
-      .prepare(
-        "UPDATE sessions SET expires=?,admin=0 WHERE expires>? AND (expires<>? OR admin<>0)",
-      )
-      .run(Number.MAX_SAFE_INTEGER, this.now(), Number.MAX_SAFE_INTEGER);
+    this.transaction(() => {
+      // Former server drafts become ordinary private files without touching content/history.
+      this.db
+        .exec(`DELETE FROM document_members WHERE documentId IN (SELECT id FROM documents WHERE draft=1);
+        UPDATE documents SET draft=0,visibility='private' WHERE draft=1;
+        CREATE TABLE IF NOT EXISTS document_creations (
+          owner TEXT NOT NULL, requestKey TEXT NOT NULL, documentId TEXT NOT NULL REFERENCES documents(id), fingerprint TEXT,
+          PRIMARY KEY(owner,requestKey));`);
+    });
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(document_creations)")
+        .all()
+        .some((column) => column.name === "fingerprint")
+    )
+      this.db.exec(
+        "ALTER TABLE document_creations ADD COLUMN fingerprint TEXT",
+      );
+    this.accounts = new Accounts(this, this.now);
   }
   username(name: unknown) {
     if (
@@ -72,33 +107,14 @@ export class WorkspaceStore {
     return name.trim();
   }
   enter(name: unknown) {
-    // A name is a display label, never a credential for an existing identity.
-    const actor = { id: randomUUID(), name: this.username(name), admin: false };
-    const token = randomBytes(32).toString("hex");
-    this.db
-      .prepare("INSERT INTO sessions VALUES (?,?,?,?,?)")
-      .run(hash(token), actor.id, actor.name, 0, Number.MAX_SAFE_INTEGER);
-    return { token, actor };
+    return this.accounts.legacy(name);
   }
   rename(actor: Actor, name: unknown): Actor {
-    if (actor.id === "local-admin")
-      throw new HttpError(400, "本机管理员身份无需修改用户名");
-    const next = { ...actor, name: this.username(name), admin: false };
-    this.transaction(() => {
-      this.db
-        .prepare("UPDATE sessions SET name=? WHERE id=?")
-        .run(next.name, actor.id);
-      this.db
-        .prepare("UPDATE leases SET name=? WHERE owner=?")
-        .run(next.name, actor.id);
-    });
-    return next;
+    if (actor.admin) throw new HttpError(400, "本机管理员无需修改用户名");
+    return this.accounts.rename(actor, name);
   }
   actor(token: string): Actor | undefined {
-    const s = this.db
-      .prepare("SELECT * FROM sessions WHERE token=? AND expires>?")
-      .get(hash(token), this.now()) as any;
-    return s && { id: s.id, name: s.name, admin: false };
+    return this.accounts.actor(token);
   }
   logout(token: string, actor: Actor) {
     this.db.prepare("DELETE FROM sessions WHERE token=?").run(hash(token));
@@ -123,13 +139,215 @@ export class WorkspaceStore {
       throw new HttpError(409, "文档身份不匹配，请导入为新文档");
     return result.xml!;
   }
-  list(deleted = false) {
+  list(deleted = false, actor?: Actor, view = "shared", mine = false) {
+    const owner = actor?.id || "",
+      admin = Number(!!actor?.admin);
     return this.db
       .prepare(
-        "SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted FROM documents WHERE deleted=? ORDER BY updatedAt DESC",
+        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
+      FROM documents WHERE deleted=? AND (owner=? OR ? OR
+        (draft=0 AND (visibility='everyone' OR (visibility='selected' AND EXISTS
+          (SELECT 1 FROM document_members WHERE documentId=documents.id AND memberId=?)))))
+      AND (?=1 OR draft=?) AND (?=0 OR owner=?) ORDER BY updatedAt DESC,id`,
       )
-      .all(Number(deleted))
+      .all(
+        Number(deleted),
+        owner,
+        admin,
+        owner,
+        Number(deleted),
+        Number(view === "drafts"),
+        Number(mine),
+        owner,
+      )
       .map((d) => ({ ...d, lock: this.publicLock(d.id as string) }));
+  }
+  access(id: string, actor: Actor, includeDeleted = false) {
+    const d = this.get(id, includeDeleted);
+    if (!this.allowed(d, actor))
+      throw new HttpError(404, "文档不存在或无权访问");
+    return d;
+  }
+  allowed(d: any, actor: Actor): boolean {
+    return !!(
+      actor.admin ||
+      d.owner === actor.id ||
+      (!d.draft &&
+        (d.visibility === "everyone" ||
+          (d.visibility === "selected" &&
+            this.db
+              .prepare(
+                "SELECT 1 FROM document_members WHERE documentId=? AND memberId=?",
+              )
+              .get(d.id, actor.id))))
+    );
+  }
+  members() {
+    return this.db
+      .prepare(
+        "SELECT id,name,login FROM workspace_users WHERE status='active' ORDER BY name,id",
+      )
+      .all();
+  }
+  sharing(id: string, actor: Actor) {
+    const d = this.access(id, actor);
+    const canManage = actor.admin || d.owner === actor.id;
+    return {
+      owner: d.owner,
+      visibility: d.visibility as Visibility,
+      accessRevision: d.accessRevision,
+      canManage,
+      recipients: canManage
+        ? this.db
+            .prepare(
+              "SELECT memberId FROM document_members WHERE documentId=? ORDER BY memberId",
+            )
+            .all(id)
+            .map((r) => r.memberId as string)
+        : [],
+    };
+  }
+  share(id: string, input: any, actor: Actor) {
+    this.transaction(() => {
+      const d = this.access(id, actor);
+      this.manage(d, actor);
+      if (d.draft)
+        throw new HttpError(409, "请先将草稿保存到文件库，再设置分享权限");
+      if (
+        !Number.isSafeInteger(input?.accessRevision) ||
+        input.accessRevision !== d.accessRevision
+      )
+        throw new HttpError(409, "分享权限已被修改，请关闭分享窗口后重新打开");
+      const visibility = input.visibility;
+      if (!["private", "selected", "everyone"].includes(visibility))
+        throw new HttpError(400, "请选择有效的分享范围");
+      if (
+        !Array.isArray(input.recipients) ||
+        input.recipients.length > 1000 ||
+        input.recipients.some((r: unknown) => typeof r !== "string") ||
+        new Set(input.recipients).size !== input.recipients.length
+      )
+        throw new HttpError(400, "成员列表无效");
+      const recipients: string[] =
+        visibility === "selected" ? input.recipients : [];
+      if (visibility === "selected" && !recipients.length)
+        throw new HttpError(400, "请至少选择一位成员");
+      for (const member of recipients) {
+        if (
+          member === d.owner ||
+          !this.db
+            .prepare(
+              "SELECT 1 FROM workspace_users WHERE id=? AND status='active'",
+            )
+            .get(member)
+        )
+          throw new HttpError(
+            400,
+            "所选成员不存在或已退出，请重新打开分享窗口选择",
+          );
+      }
+      this.db
+        .prepare("DELETE FROM document_members WHERE documentId=?")
+        .run(id);
+      for (const member of recipients)
+        this.db
+          .prepare("INSERT INTO document_members VALUES (?,?)")
+          .run(id, member);
+      this.db
+        .prepare(
+          "UPDATE documents SET visibility=?,accessRevision=accessRevision+1 WHERE id=?",
+        )
+        .run(visibility, id);
+      const lock = this.lock(id);
+      if (
+        lock &&
+        !this.allowed(this.get(id), {
+          id: lock.owner,
+          name: lock.name,
+          admin: lock.owner === "local-admin",
+        })
+      )
+        this.db.prepare("DELETE FROM leases WHERE id=?").run(id);
+    });
+    return this.sharing(id, actor);
+  }
+  manage(d: any, actor: Actor) {
+    if (!actor.admin && actor.id !== d.owner)
+      throw new HttpError(403, "仅文件所有者或管理员可管理文档");
+  }
+  idle(id: string) {
+    const lock = this.lock(id);
+    if (lock)
+      throw new HttpError(423, `${lock.name} 正在编辑，请先结束编辑再管理文件`);
+  }
+  renameDocument(id: string, input: any, actor: Actor) {
+    const name = this.name(input.name);
+    this.transaction(() => {
+      const d = this.access(id, actor);
+      this.manage(d, actor);
+      this.idle(id);
+      this.revision(d, input.revision);
+      if (d.name === name) return;
+      this.db
+        .prepare(
+          "UPDATE documents SET name=?,revision=revision+1,updatedBy=?,updatedAt=? WHERE id=?",
+        )
+        .run(name, actor.name, this.now(), id);
+      this.record(id, "重命名");
+    });
+    return this.access(id, actor);
+  }
+  publish(id: string, input: any, actor: Actor) {
+    const name = this.name(input.name);
+    this.transaction(() => {
+      const d = this.access(id, actor);
+      this.manage(d, actor);
+      this.revision(d, input.revision);
+      if (!d.draft) throw new HttpError(409, "图稿已经在文件库中");
+      if (this.lock(id)) this.requireLock(id, actor, input.lockToken);
+      this.db
+        .prepare(
+          "UPDATE documents SET draft=0,name=?,revision=revision+1,updatedBy=?,updatedAt=? WHERE id=?",
+        )
+        .run(name, actor.name, this.now(), id);
+      this.record(id, "保存到文件库");
+    });
+    return this.access(id, actor);
+  }
+  batchTrash(input: any, actor: Actor) {
+    const items = input?.items;
+    if (
+      !Array.isArray(items) ||
+      !items.length ||
+      items.length > 100 ||
+      items.some(
+        (item) =>
+          !item ||
+          typeof item.id !== "string" ||
+          !Number.isSafeInteger(item.revision),
+      ) ||
+      new Set(items.map((item) => item.id)).size !== items.length
+    )
+      throw new HttpError(400, "请选择 1–100 份不同的文件");
+    // Validate the entire selection under the write lock: never partially delete a batch.
+    this.transaction(() => {
+      for (const item of items) {
+        const d = this.access(item.id, actor);
+        this.manage(d, actor);
+        this.idle(item.id);
+        this.revision(d, item.revision);
+      }
+      for (const item of items) {
+        this.db
+          .prepare(
+            "UPDATE documents SET deleted=1,revision=revision+1,updatedBy=?,updatedAt=? WHERE id=?",
+          )
+          .run(actor.name, this.now(), item.id);
+        this.record(item.id, "移入回收站");
+        this.db.prepare("DELETE FROM leases WHERE id=?").run(item.id);
+      }
+    });
+    return { count: items.length };
   }
   get(id: string, includeDeleted = false): any {
     const d = this.db
@@ -139,9 +357,21 @@ export class WorkspaceStore {
       throw new HttpError(404, "文档不存在或已移入回收站");
     return { ...d, lock: this.publicLock(id) };
   }
-  create(name: unknown, xml: unknown, actor: Actor) {
-    const id = randomUUID(),
-      title = this.name(name);
+  create(
+    name: unknown,
+    xml: unknown,
+    actor: Actor,
+    draft = false,
+    requestKey?: unknown,
+  ) {
+    if (
+      requestKey !== undefined &&
+      (typeof requestKey !== "string" || !/^[0-9a-f-]{36}$/i.test(requestKey))
+    )
+      throw new HttpError(400, "新建请求标识无效");
+    let id = randomUUID();
+    const title = this.name(name);
+    const fingerprint = hash(JSON.stringify([title, xml ?? null]));
     const doc = new DOMParser().parseFromString(
       this.xml(xml ?? emptyDocument(title)),
       "text/xml",
@@ -154,9 +384,26 @@ export class WorkspaceStore {
     root.setAttribute("dw_meta", JSON.stringify(meta));
     const content = this.xml(new XMLSerializer().serializeToString(doc), id);
     this.transaction(() => {
+      if (requestKey) {
+        const prior = this.db
+          .prepare(
+            "SELECT documentId,fingerprint FROM document_creations WHERE owner=? AND requestKey=?",
+          )
+          .get(actor.id, requestKey as string);
+        if (prior) {
+          if (prior.fingerprint && prior.fingerprint !== fingerprint)
+            throw new HttpError(
+              409,
+              "此新建页面已在其他标签页保存不同内容，请下载当前副本后重新导入",
+            );
+          id = String(prior.documentId) as typeof id;
+          this.access(id, actor);
+          return;
+        }
+      }
       this.db
         .prepare(
-          "INSERT INTO documents (id,name,xml,revision,owner,updatedBy,updatedAt,deleted,createdBy) VALUES (?,?,?,?,?,?,?,0,?)",
+          "INSERT INTO documents (id,name,xml,revision,owner,updatedBy,updatedAt,deleted,createdBy,draft) VALUES (?,?,?,?,?,?,?,0,?,?)",
         )
         .run(
           id,
@@ -167,8 +414,15 @@ export class WorkspaceStore {
           actor.name,
           this.now(),
           actor.name,
+          Number(draft),
         );
-      this.record(id, "创建文档");
+      this.record(id, draft ? "创建草稿" : "创建文档");
+      if (requestKey)
+        this.db
+          .prepare(
+            "INSERT INTO document_creations (owner,requestKey,documentId,fingerprint) VALUES (?,?,?,?)",
+          )
+          .run(actor.id, requestKey as string, id, fingerprint);
     });
     return this.get(id);
   }
@@ -198,10 +452,11 @@ export class WorkspaceStore {
       : null;
   }
   acquire(id: string, actor: Actor, client: unknown) {
-    this.get(id);
+    this.access(id, actor);
     if (typeof client !== "string" || !/^[\w-]{8,100}$/.test(client))
       throw new HttpError(400, "页面身份无效");
     return this.transaction(() => {
+      this.access(id, actor);
       const existing = this.lock(id);
       if (
         existing &&
@@ -223,7 +478,7 @@ export class WorkspaceStore {
     });
   }
   requireLock(id: string, actor: Actor, token: unknown): Lease {
-    this.get(id);
+    this.access(id, actor);
     const l = this.lock(id);
     if (!l || l.owner !== actor.id || l.token !== token)
       throw new HttpError(423, "编辑权已失效，请保留修改并重新获取编辑权");
@@ -308,9 +563,8 @@ export class WorkspaceStore {
   }
   trash(id: string, input: any, actor: Actor, deleted: boolean) {
     this.transaction(() => {
-      const d = this.get(id, true);
-      if (!actor.admin && actor.id !== d.owner)
-        throw new HttpError(403, "仅创建者或管理员可删除和恢复文档");
+      const d = this.access(id, actor, true);
+      this.manage(d, actor);
       this.revision(d, input.revision);
       if (!!d.deleted === deleted)
         throw new HttpError(

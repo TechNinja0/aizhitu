@@ -31,12 +31,61 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
     }),
   );
   app.get(
+    "/api/members",
+    route(() => store.members()),
+  );
+  app.get(
     "/api/documents",
-    route((r) => store.list(r.query.deleted === "1")),
+    route((r) =>
+      store.list(
+        r.query.deleted === "1",
+        actor(r),
+        String(r.query.view || "shared"),
+        r.query.mine === "1",
+      ),
+    ),
   );
   app.post(
     "/api/documents",
-    route((r) => store.create(r.body?.name, r.body?.xml, actor(r))),
+    route((r) =>
+      store.create(
+        r.body?.name,
+        r.body?.xml,
+        actor(r),
+        false,
+        r.body?.requestKey,
+      ),
+    ),
+  );
+  app.post(
+    "/api/documents/batch-trash",
+    route((r) => store.batchTrash(r.body, actor(r))),
+  );
+  app.use("/api/documents/:id", (req, res, next) => {
+    try {
+      store.access(String(req.params.id), actor(req), true);
+      next();
+    } catch (error) {
+      res.status(error instanceof HttpError ? error.status : 500).json({
+        error: error instanceof HttpError ? error.message : "文档操作失败",
+      });
+    }
+  });
+  app.get(
+    "/api/documents/:id/sharing",
+    route((r) => store.sharing(String(r.params.id), actor(r))),
+  );
+  app.put(
+    "/api/documents/:id/sharing",
+    route((r) => store.share(String(r.params.id), r.body, actor(r))),
+  );
+  app.patch(
+    "/api/documents/:id/name",
+    route((r) => store.renameDocument(String(r.params.id), r.body, actor(r))),
+  );
+  app.post(
+    "/api/documents/:id/publish",
+    route((r) => store.publish(String(r.params.id), r.body, actor(r))),
   );
   app.get(
     "/api/documents/:id/state",

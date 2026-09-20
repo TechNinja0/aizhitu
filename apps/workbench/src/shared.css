@@ -147,11 +147,11 @@
 .shared-row {
   display: grid;
   grid-template-columns:
-    minmax(200px, 2fr) minmax(100px, 0.7fr) minmax(175px, 1.2fr) minmax(
+    32px minmax(180px, 2fr) minmax(90px, 0.7fr) minmax(175px, 1.2fr) minmax(
       150px,
       1fr
     )
-    130px;
+    86px;
   align-items: center;
   gap: 18px;
   padding: 20px 24px;
@@ -301,7 +301,7 @@
     padding: 0 20px 24px;
   }
   .shared-row {
-    min-width: 760px;
+    min-width: 930px;
   }
   .shared-library header {
     align-items: flex-start;
@@ -312,4 +312,123 @@
   .shared-create input {
     width: 220px;
   }
+}
+
+.shared-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.shared-row-actions button {
+  padding: 5px 7px;
+  font-size: 12px;
+}
+.shared-row input[type="checkbox"],
+.shared-mine input {
+  width: 16px;
+  height: 16px;
+  accent-color: #24543a;
+}
+.shared-mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 12px;
+  font-size: 13px;
+}
+.shared-batch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  border-top: 1px solid #e9eeea;
+  font-size: 12px;
+  color: #63756a;
+}
+.shared-hero small {
+  color: #63756a;
+}
+
+.shared-table-head > :last-child {
+  text-align: center;
+}
+.shared-library .shared-action-icon {
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6c8174;
+}
+.shared-action-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.shared-library .shared-action-icon:hover:not(:disabled) {
+  background: #edf4ee;
+  color: #24543a;
+}
+.shared-library .shared-action-delete:hover:not(:disabled) {
+  background: #fbeeee;
+  color: #b34242;
+}
+.shared-library .shared-action-icon:focus-visible {
+  outline: 2px solid #86ac8e;
+  outline-offset: 2px;
+}
+
+.shared-sharing-scope,
+.shared-sharing-members {
+  border: 1px solid var(--line, #d8e3dc);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px 0;
+}
+.shared-sharing-scope {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.shared-share .shared-sharing-scope label,
+.shared-share .shared-sharing-members label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  cursor: pointer;
+}
+.shared-share input[type="radio"],
+.shared-share input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  accent-color: #24513d;
+}
+.shared-sharing-members {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.shared-sharing-members small {
+  display: block;
+  font-size: 11px;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+.shared-share .shared-share-note,
+.shared-identity {
+  font-size: 12px;
+  color: #657d6e;
+  overflow-wrap: anywhere;
+}
+.shared-share {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
 }

@@ -16,6 +16,8 @@ const server = await startServer({
     option("--editor-port") || (option("--lan-host") ? 4318 : 0),
   ),
   dataDirectory: option("--data-dir"),
+  tlsCert: option("--tls-cert"),
+  tlsKey: option("--tls-key"),
   port: idx >= 0 ? Number(process.argv[idx + 1]) : 4317,
 });
 console.log(
@@ -23,7 +25,7 @@ console.log(
 );
 if (server.workspace)
   console.log(
-    `首次访问只需填写用户名，本浏览器会自动记住身份。\n本机管理入口：${server.origin}\n数据目录：${server.workspace.directory}`,
+    `使用固定账号和密码登录，可记住登录 30 天；旧浏览器首次升级需补设账号。\n本机管理入口：${server.origin}\n数据目录：${server.workspace.directory}`,
   );
 if (process.argv.includes("--open")) {
   const command =

@@ -35,6 +35,11 @@ test("文档：浏览器身份、独立 ID、跨连接锁、过期接管、冲�
     assert.equal(store.actor(a.token)?.id, a.actor.id);
     const doc = store.create("架构图", example, a.actor),
       second = store.create("另一张图", example, b.actor);
+    store.share(
+      doc.id,
+      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      a.actor,
+    );
     assert.notEqual(doc.id, second.id);
     assert.equal(validate(doc.xml).metadata!.documentId, doc.id);
     const lockA = store.acquire(doc.id, a.actor, "client-A");
@@ -189,17 +194,18 @@ test("共享 API：鉴权、同时抢锁、保存版本竞争、AI 排队和任�
     assert.equal((await request("", "documents")).status, 401);
     const login = async (name: string) =>
       (
-        await request("", "session", "POST", {
-          name,
+        await request("", "auth/register", "POST", {
+          login: "member-" + (name === "甲" ? "a" : "b"), password: "Account-testing-2026-safe", name,
         })
       ).data;
     const a = await login("甲"),
       b = await login("乙");
-    const fakeAdmin = await request("", "session", "POST", {
+    const fakeAdmin = await request("", "auth/register", "POST", {
+      login: "fakeadmin",
       name: "管理员",
       admin: true,
       key: "legacy-code",
-      password: "unused",
+      password: "Account-testing-2026-safe",
     });
     assert.equal(fakeAdmin.status, 200);
     assert.equal(fakeAdmin.data.actor.admin, false);
@@ -215,12 +221,17 @@ test("共享 API：鉴权、同时抢锁、保存版本竞争、AI 排队和任�
     assert.equal(renamed.data.id, a.actor.id);
     assert.equal(renamed.data.name, "甲（更新）");
 
-    const d = (
+    let d = (
       await request(a.token, "documents", "POST", {
         name: "接口图",
         xml: example,
       })
     ).data;
+    await request(a.token, `documents/${d.id}/sharing`, "PUT", {
+      visibility: "everyone",
+      recipients: [],
+      accessRevision: 1,
+    });
     assert.equal((await request(b.token, "documents/" + d.id)).data.id, d.id);
     const races = await Promise.all([
       request(a.token, `documents/${d.id}/lock`, "POST", {
@@ -239,7 +250,7 @@ test("共享 API：鉴权、同时抢锁、保存版本竞争、AI 排队和任�
         request(winner.token, `documents/${d.id}`, "PUT", {
           xml: d.xml,
           name,
-          revision: 1,
+          revision: d.revision,
           lockToken: lease.token,
         }),
       ),

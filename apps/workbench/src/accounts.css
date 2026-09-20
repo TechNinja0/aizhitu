@@ -1,0 +1,180 @@
+.account-page {
+  max-width: 1240px;
+  padding: 36px 28px 80px;
+  margin: auto;
+  color: #243b2d;
+}
+.account-page h1 {
+  font-size: 32px;
+  margin: 24px 0 12px;
+}
+.account-page p {
+  color: #597363;
+  line-height: 1.7;
+}
+.account-card {
+  background: #fff;
+  border: 1px solid #d5e1d8;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 24px 0;
+}
+.account-page label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+  max-width: 600px;
+}
+.account-page input,
+.account-page select {
+  padding: 10px 12px;
+  border: 1px solid #bbd1c1;
+  border-radius: 6px;
+  min-width: 0;
+  background: white;
+  color: inherit;
+}
+.account-page button {
+  padding: 9px 14px;
+  border: 1px solid #bed1c4;
+  border-radius: 6px;
+  background: white;
+  color: #24533c;
+  cursor: pointer;
+}
+.account-page button.primary {
+  background: #24533c;
+  color: white;
+}
+.account-page button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.account-page [role="alert"],
+.shared-login [role="alert"] {
+  color: #a13131;
+}
+.account-actions,
+.account-tabs,
+.account-list-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.account-actions {
+  margin: 16px 0;
+}
+.account-tabs {
+  margin: 20px 0;
+}
+.account-tabs button {
+  font-size: 12px;
+  padding: 6px;
+}
+.account-tabs button[aria-pressed="true"] {
+  background: #e6eee7;
+}
+.shared-login .account-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0;
+}
+.shared-login .account-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.account-table-scroll {
+  overflow-x: auto;
+}
+.account-page table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  font-size: 13px;
+}
+.account-page th {
+  text-align: left;
+  background: #eef4ee;
+  color: #5e7666;
+  font-weight: 500;
+}
+.account-page td,
+.account-page th {
+  padding: 16px;
+  border-bottom: 1px solid #e1e9e3;
+}
+.account-page td small {
+  display: block;
+  margin-top: 5px;
+  color: #657c6d;
+}
+.account-credential {
+  background: #eef5ee;
+}
+.account-credential button {
+  margin-right: 8px;
+}
+.account-credential input {
+  font-family: monospace;
+}
+.shared-login form {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  .account-page {
+    padding: 20px 16px 50px;
+  }
+  .account-card {
+    padding: 18px;
+  }
+  .account-page table {
+    min-width: 800px;
+  }
+}
+.shared-login .account-tabs {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.shared-login .account-tabs button {
+  width: auto;
+  margin: 0;
+  flex: 1;
+  white-space: nowrap;
+}
+.account-page a {
+  color: #24533c;
+  text-decoration: none;
+}
+.account-page a:hover {
+  text-decoration: underline;
+}
+.account-create {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 18px;
+}
+.account-create h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.account-create label {
+  margin: 0;
+}
+.account-list-heading input {
+  min-width: 280px;
+}
+@media (max-width: 760px) {
+  .account-create {
+    grid-template-columns: 1fr;
+  }
+  .account-list-heading input {
+    min-width: 0;
+    width: 100%;
+  }
+}

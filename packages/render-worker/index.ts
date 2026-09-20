@@ -113,6 +113,8 @@ export class Renderer {
       this.browser = browser;
     }
     const context = await this.browser.newContext({
+      // This context is restricted below to our own local renderer origin.
+      ignoreHTTPSErrors: this.origin.startsWith("https://127.0.0.1:"),
       viewport: { width: 1440, height: 1000 },
     });
     await context.route("**/*", (route) => {

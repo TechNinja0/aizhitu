@@ -1,11 +1,16 @@
 import { extractSource } from "../../packages/document-tools/embedded.ts";
 import { compareDocuments } from "../../packages/document-tools/diff.ts";
 import express from "express";
+import { createServer as createHttpsServer } from "node:https";
 import { AIService } from "../../packages/ai-service/index.ts";
 import { randomBytes, createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { WorkspaceStore, HttpError, type Actor } from "./shared/store.ts";
+import {
+  publicAccountRoutes,
+  privateAccountRoutes,
+} from "./shared/account-routes.ts";
 import { sharedRoutes } from "./shared/routes.ts";
 import { readFile } from "node:fs/promises";
 import type { Server } from "node:http";
@@ -28,6 +33,9 @@ export async function startServer({
   enginePort = 0,
   dataDirectory = path.join(os.homedir(), ".ai-zhitu"),
   leaseMs = 30_000,
+  workbenchDirectory = at("dist/workbench"),
+  tlsCert,
+  tlsKey,
 }: {
   port?: number;
   dev?: boolean;
@@ -37,7 +45,17 @@ export async function startServer({
   enginePort?: number;
   dataDirectory?: string;
   leaseMs?: number;
+  workbenchDirectory?: string;
+  tlsCert?: string;
+  tlsKey?: string;
 } = {}) {
+  if (!!tlsCert !== !!tlsKey)
+    throw Error("HTTPS 需要同时指定 --tls-cert 和 --tls-key");
+  const tls =
+    tlsCert && tlsKey
+      ? { cert: await readFile(tlsCert), key: await readFile(tlsKey) }
+      : undefined;
+  if (tls && dev) throw Error("HTTPS 请使用构建后的工作台，不支持 --dev");
   const version = JSON.parse(
     await readFile(at("package.json"), "utf8"),
   ).version;
@@ -55,17 +73,26 @@ export async function startServer({
     enginePort,
     lanHost ? "0.0.0.0" : "127.0.0.1",
     lanHost,
+    tls,
   );
   const renderer = new Renderer(engine.origin);
   const jobs = new Jobs(renderer);
   const templates = new TemplateStore(dataDirectory);
+  if (workspace) workspace.transaction(() => {
+    // Old name-only sessions could be removed on logout. Keep template-only owners recoverable too.
+    const owners = templates.db.prepare("SELECT DISTINCT owner FROM templates WHERE owner<>'local-admin'").all();
+    for (const owner of owners) workspace.db.prepare("INSERT OR IGNORE INTO workspace_users (id,name,createdAt) VALUES (?,?,?)").run(owner.owner, "历史模板用户", Date.now());
+  });
   const app = express();
   app.disable("x-powered-by");
   const token = randomBytes(32).toString("hex");
   let origin = "";
   let publicOrigin = "";
   const aiOwners = new Map<string, { owner: string; documentId?: string }>();
-  const exportOwners = new Map<string, { owner: string; contentHash: string }>();
+  const exportOwners = new Map<
+    string,
+    { owner: string; contentHash: string }
+  >();
   const actor = (req: any): Actor => req.actor;
   const admin = (req: any) => {
     if (!actor(req).admin)
@@ -99,32 +126,7 @@ export async function startServer({
     next();
   });
   app.use("/api", express.json({ limit: "28mb" }));
-  const attempts = new Map<string, { count: number; until: number }>();
-  app.post("/api/session", (req, res) => {
-    res.setHeader("Cache-Control", "no-store");
-    if (!workspace) return void res.status(404).end();
-    const ip = req.socket.remoteAddress || "unknown";
-    for (const [key, value] of attempts)
-      if (value.until < Date.now()) attempts.delete(key);
-    const attempt = attempts.get(ip) || {
-      count: 0,
-      until: Date.now() + 60_000,
-    };
-    attempts.set(ip, attempt);
-    if (++attempt.count > 10)
-      return void res
-        .status(429)
-        .json({ error: "尝试次数过多，请一分钟后重试" });
-    try {
-      const login = workspace.enter(req.body?.name);
-      attempts.delete(ip);
-      res.json(login);
-    } catch (e) {
-      res
-        .status(e instanceof HttpError ? e.status : 400)
-        .json({ error: (e as Error).message });
-    }
-  });
+  if (workspace) publicAccountRoutes(app, workspace);
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
     const supplied = req.headers.authorization?.replace(/^Bearer /, "") || "";
@@ -141,7 +143,10 @@ export async function startServer({
       return void res.status(401).json({ error: "会话无效，请刷新工作台" });
     next();
   });
-  if (workspace) sharedRoutes(app, workspace);
+  if (workspace) {
+    sharedRoutes(app, workspace);
+    privateAccountRoutes(app, workspace, templates);
+  }
   const aiRoute = (fn: (req: any) => unknown) => async (req: any, res: any) => {
     try {
       res.json(await fn(req));
@@ -352,7 +357,10 @@ export async function startServer({
       for (const id of exportOwners.keys())
         if (!jobs.jobs.has(id)) exportOwners.delete(id);
       const id = jobs.add(doc.xml!, req.body.options);
-      exportOwners.set(id, { owner: actor(req).id, contentHash: doc.contentHash! });
+      exportOwners.set(id, {
+        owner: actor(req).id,
+        contentHash: doc.contentHash!,
+      });
       res.status(202).json({ jobId: id });
     } catch (e) {
       res
@@ -361,7 +369,10 @@ export async function startServer({
     }
   });
   app.get("/api/jobs/:id", (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
+    if (
+      shared &&
+      exportOwners.get(String(req.params.id))?.owner !== actor(req).id
+    )
       return void res.status(404).end();
     jobs.cleanup();
     const j = jobs.jobs.get(req.params.id);
@@ -376,7 +387,10 @@ export async function startServer({
     });
   });
   app.get("/api/jobs/:id/result", (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
+    if (
+      shared &&
+      exportOwners.get(String(req.params.id))?.owner !== actor(req).id
+    )
       return void res.status(404).end();
     const j = jobs.jobs.get(req.params.id);
     if (j?.status !== "succeeded" || !j.result)
@@ -384,7 +398,10 @@ export async function startServer({
     res.type(j.result.mime).sendFile(j.result.path);
   });
   app.delete("/api/jobs/:id", async (req, res) => {
-    if (shared && exportOwners.get(String(req.params.id))?.owner !== actor(req).id)
+    if (
+      shared &&
+      exportOwners.get(String(req.params.id))?.owner !== actor(req).id
+    )
       return void res.status(404).end();
     res.status((await jobs.cancel(String(req.params.id))) ? 204 : 404).end();
   });
@@ -392,37 +409,41 @@ export async function startServer({
   app.use("/fonts", express.static(at("assets/fonts")));
   app.use("/help", express.static(at("packages/ai-support")));
   if (vite) app.use(vite.middlewares);
-  else app.use(express.static(at("dist/workbench"), { index: false }));
-  app.get(["/", "/local", "/documents/:id"], async (req, res) => {
-    let html = await readFile(
-      at(dev ? "apps/workbench/index.html" : "dist/workbench/index.html"),
-      "utf8",
-    );
-    if (vite) html = await vite.transformIndexHtml(req.originalUrl, html);
-    const requestedOrigin =
-      req.headers.host === new URL(origin).host ? origin : publicOrigin;
-    const editorOrigin =
-      requestedOrigin === origin
-        ? engine.origin
-        : engine.origin.replace("127.0.0.1", lanHost!);
-    html = html.replace(
-      "<!--BOOT-->",
-      `<script>window.__BOOT__=${JSON.stringify({ token: !lanHost || (req.headers.host === new URL(origin).host && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "")) ? token : "", publicOrigin, shared, leaseMs, editorUrl: editorUrl(editorOrigin, requestedOrigin), editorOrigin })}</script>`,
-    );
-    res.setHeader("Cache-Control", "no-store");
-    res.type("html").send(html);
-  });
+  else app.use(express.static(workbenchDirectory, { index: false }));
+  app.get(
+    ["/", "/local", "/account", "/admin/users", "/documents/:id", "/new/:id"],
+    async (req, res) => {
+      let html = await readFile(
+        dev
+          ? at("apps/workbench/index.html")
+          : path.join(workbenchDirectory, "index.html"),
+        "utf8",
+      );
+      if (vite) html = await vite.transformIndexHtml(req.originalUrl, html);
+      const requestedOrigin =
+        req.headers.host === new URL(origin).host ? origin : publicOrigin;
+      const editorOrigin =
+        requestedOrigin === origin
+          ? engine.origin
+          : engine.origin.replace("127.0.0.1", lanHost!);
+      html = html.replace(
+        "<!--BOOT-->",
+        `<script>window.__BOOT__=${JSON.stringify({ token: !lanHost || (req.headers.host === new URL(origin).host && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "")) ? token : "", publicOrigin, shared, leaseMs, editorUrl: editorUrl(editorOrigin, requestedOrigin), editorOrigin })}</script>`,
+      );
+      res.setHeader("Cache-Control", "no-store");
+      res.type("html").send(html);
+    },
+  );
   app.use((err: any, _req: any, res: any, _next: any) => {
     res.status(err.status || 500).json({
       error: err.type === "entity.too.large" ? "文件内容过大" : "本地请求失败",
     });
   });
   const server = await new Promise<Server>((resolve, reject) => {
-    const s = app.listen(
-      port,
-      lanHost ? "0.0.0.0" : "127.0.0.1",
-      (error?: Error) => (error ? reject(error) : resolve(s)),
-    );
+    const host = lanHost ? "0.0.0.0" : "127.0.0.1";
+    const s = tls
+      ? createHttpsServer(tls, app).listen(port, host, () => resolve(s))
+      : app.listen(port, host, () => resolve(s));
     s.on("error", reject);
   }).catch(async (error) => {
     templates.close();
@@ -431,7 +452,7 @@ export async function startServer({
     await new Promise<void>((resolve) => engine.server.close(() => resolve()));
     throw error;
   });
-  origin = `http://127.0.0.1:${(server.address() as any).port}`;
+  origin = `${tls ? "https" : "http"}://127.0.0.1:${(server.address() as any).port}`;
   publicOrigin = lanHost ? origin.replace("127.0.0.1", lanHost) : origin;
   return {
     origin,

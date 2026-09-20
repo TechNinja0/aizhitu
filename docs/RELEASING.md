@@ -16,42 +16,33 @@
 - 保留 `package-lock.json`、固定的 `vendor/drawio` 资源、字体与许可、合成 `fixtures`。
 - 如发布构建包，随包带上 LICENSE、NOTICE、第三方声明、字体许可及打包依赖要求的许可文本；npm 许可摘要不能代替许可原文。
 
-## v1.1 发布产物
+## 当前版本发布产物（v1.6）
 
 1. `npm run check` 和 `npm run docs:check` 通过后执行 `npm run package:local`。
 2. 执行 `node scripts/verify-local-package.mjs` 验证独立解压目录的安装与启动。此脚本使用本机 npm 缓存，不等于无缓存联网安装验证。
 3. 发布 `artifacts/ai-zhitu-local.tar.gz` 和 `.sha256`，附 [更新记录](../CHANGELOG.md) 与实际测试平台。包不含个人账号、配置或生成图稿。
 4. 源码工作流见 `.github/workflows/check.yml`，首次推送后查看真实 CI 结果；本地通过不能代替远程 CI 已运行的声明。
 
-本轮只完成本地代码、文档与分享产物，不创建外部仓库、不推送、不发布 Release。
+## 提交与推送已有仓库
 
-## 创建并推送仓库
-
-在 GitHub 创建空仓库 `ai-zhitu`，不要让 GitHub 再生成 README、LICENSE 或 `.gitignore`，本项目已提供这些文件。
-
-在项目根目录执行：
+当前仓库为 [TechNinja0/aizhitu](https://github.com/TechNinja0/aizhitu)，默认分支为 `main`。先核对远端、暂存区、未暂存文件和已提交但尚未推送的提交：
 
 ```sh
-git init -b main
-git add .
+git fetch origin
 git status --short
+git log --oneline origin/main..HEAD
+git diff --stat
 git diff --cached --stat
-git diff --cached --check
 ```
 
-检查暂存内容后提交：
+更新 README、使用指南、产品/技术规格、SECURITY、CHANGELOG 和相应测试报告，使其描述当前实现；历史版本报告保留当时的验证范围。审核需要提交的文件后显式暂存，运行 `git diff --cached --check`，再提交并使用普通推送：
 
 ```sh
-git commit -m "docs: prepare AI ZhiTu for open source"
+git commit -m "feat: 完善账号权限与文件自动保存"
+git push origin main
 ```
 
-在 GitHub 新仓库页面复制准确的 `git remote add origin ...` 命令，在本地执行，然后推送：
-
-```sh
-git push -u origin main
-```
-
-本文不会预填不存在的账号、仓库 URL 或作者邮箱。仓库公开后，可补充 README 中的克隆命令与项目主页。
+推送后核对本地 HEAD 与远端分支一致，并检查 GitHub Actions。源码推送、创建 Release 和上传安装包是不同操作；只有需要发布安装包时才执行独立的 Release 流程。不要把备份数据库、日志、账号配置或 `artifacts/` 加入版本控制。
 
 ## 仓库设置
 

@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
   console.log(
-    "AI智图 · 本地启动\nnode bin/zhitu.mjs [--port 4317] [--lan-host 192.168.1.10] [--editor-port 4318] [--data-dir PATH] [--no-open]\n首次运行自动安装项目依赖和 Chromium，需要联网。复用本机已登录 CLI。",
+    "AI智图 · 本地启动\nnode bin/zhitu.mjs [--port 4317] [--lan-host 192.168.1.10] [--editor-port 4318] [--data-dir PATH] [--tls-cert CERT.pem --tls-key KEY.pem] [--no-open]\n首次运行自动安装项目依赖和 Chromium，需要联网。复用本机已登录 CLI。",
   );
   process.exit(0);
 }
@@ -24,7 +24,7 @@ for (let i = 0; i < args.length; i++) {
     port = args[++i];
     if (!/^\d+$/.test(port) || Number(port) < 0 || Number(port) > 65535)
       throw Error("端口必须为 0–65535");
-  } else if (["--lan-host", "--editor-port", "--data-dir"].includes(args[i])) {
+  } else if (["--lan-host", "--editor-port", "--data-dir", "--tls-cert", "--tls-key"].includes(args[i])) {
     const key = args[i], value = args[++i];
     if (!value || value.startsWith("--")) throw Error(key + " 缺少参数");
     extra.push(key, value);

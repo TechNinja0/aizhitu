@@ -1,10 +1,12 @@
 import express from "express";
+import { createServer as createHttpsServer } from "node:https";
 import type { Server } from "node:http";
 import { at } from "./paths.ts";
 export async function startEngine(
   port = 0,
   host = "127.0.0.1",
   publicHost = "127.0.0.1",
+  tls?: { cert: Buffer; key: Buffer },
 ): Promise<{ server: Server; origin: string }> {
   const app = express();
   let origin = "";
@@ -60,12 +62,12 @@ export async function startEngine(
   );
   app.use((_req, res) => res.status(404).end());
   const server = await new Promise<Server>((resolve, reject) => {
-    const s = app.listen(port, host, (error?: Error) =>
-      error ? reject(error) : resolve(s),
-    );
+    const s = tls
+      ? createHttpsServer(tls, app).listen(port, host, () => resolve(s))
+      : app.listen(port, host, () => resolve(s));
     s.on("error", reject);
   });
-  origin = `http://127.0.0.1:${(server.address() as any).port}`;
+  origin = `${tls ? "https" : "http"}://127.0.0.1:${(server.address() as any).port}`;
   return { server, origin };
 }
 export const editorUrl = (origin: string, parentOrigin = origin) =>

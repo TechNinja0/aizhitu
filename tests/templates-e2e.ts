@@ -242,9 +242,7 @@ try {
 
   // File library uses the same picker and persists the actual template, then reloads it.
   await page.goto(server.origin);
-  await page
-    .getByRole("button", { name: /^新建(草稿|共享图稿)$/, exact: true })
-    .click();
+  await page.getByRole("button", { name: "新建图稿", exact: true }).click();
   await picker()
     .getByRole("button", { name: "选择模板：申请审批流程", exact: true })
     .click();
@@ -262,12 +260,18 @@ try {
     return route.continue();
   });
   await picker().getByRole("button", { name: "使用此模板" }).click();
-  await picker()
-    .getByRole("alert")
-    .filter({ hasText: "模拟创建失败" })
+  await page.waitForURL(/\/new\//);
+  await expect(
+    page.getByRole("button", { name: "保存到文件库", exact: true }),
+  ).toBeEnabled();
+  assert.equal(createCalls, 0, "仅选择模板不创建服务器文件");
+  await page.getByRole("button", { name: "保存到文件库", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "首次保存图稿" })
+    .getByText(/模拟创建失败/)
     .waitFor();
-  await expect(picker().getByLabel("新建图稿名称")).toHaveValue("共享审批模板");
-  await picker().getByRole("button", { name: "使用此模板" }).click();
+  await expect(page.getByLabel("图稿文件名")).toHaveValue("共享审批模板");
+  await page.getByRole("button", { name: "重试保存", exact: true }).click();
   await page.waitForURL(/\/documents\//);
   await page.getByText("5 个节点 · 5 条连线").waitFor();
   const sharedId = validate((await invoke("snapshot")).xml).metadata!
@@ -281,19 +285,23 @@ try {
   pass("共享文件库支持模板创建、失败重试与刷新后持久化");
 
   await page.getByRole("link", { name: "← 文件库" }).click();
-  await page
-    .getByRole("button", { name: /^新建(草稿|共享图稿)$/, exact: true })
-    .click();
+  await page.getByRole("button", { name: "新建图稿", exact: true }).click();
   await picker().getByLabel("新建图稿名称").fill("保留名称的空白草稿");
   await picker()
     .getByRole("button", { name: "创建空白画布", exact: true })
     .click();
+  await expect(
+    page.getByRole("button", { name: "保存到文件库", exact: true }),
+  ).toBeEnabled();
+  await page.getByRole("button", { name: "保存到文件库", exact: true }).click();
+  await page.waitForURL(/\/documents\//);
+  await page.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
   await page.getByText("0 个节点 · 0 条连线").waitFor();
   const blankUrl = page.url(),
     documentCreates = createCalls;
   await expect(templateEntry()).toBeVisible();
   const blankShared = validate((await invoke("snapshot")).xml);
-  // Drafts may enter editing automatically; release before another page takes the lease.
+  // Newly saved files enter editing automatically; release before testing the other tab.
   const finishEditing = page.getByRole("button", {
     name: "结束编辑",
     exact: true,
@@ -339,13 +347,11 @@ try {
   await page.getByText("8 个节点 · 7 条连线").waitFor();
   assert.equal(page.url(), blankUrl);
   pass(
-    "共享空白草稿自动申请编辑权、锁冲突可重试；应用不创建新文件且刷新后内容保留",
+    "已保存空白文件自动申请编辑权、锁冲突可重试；应用不创建新文件且刷新后内容保留",
   );
 
   await page.getByRole("link", { name: "← 文件库" }).click();
-  await page
-    .getByRole("button", { name: /^新建(草稿|共享图稿)$/, exact: true })
-    .click();
+  await page.getByRole("button", { name: "新建图稿", exact: true }).click();
   await page.setViewportSize({ width: 760, height: 840 });
   await picker()
     .getByRole("button", { name: "选择模板：跨部门泳道流程", exact: true })

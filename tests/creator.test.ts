@@ -11,8 +11,13 @@ test("创建人与最后保存人分开持久保存，历史版本淘汰、退�
   try {
     const a = store.enter("王强"),
       b = store.enter("小张");
-    const doc = store.create("架构图", undefined, a.actor),
-      lock = store.acquire(doc.id, b.actor, "other-editor");
+    const doc = store.create("架构图", undefined, a.actor);
+    store.share(
+      doc.id,
+      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      a.actor,
+    );
+    const lock = store.acquire(doc.id, b.actor, "other-editor");
     let current = doc;
     for (let i = 0; i < 52; i++)
       current = store.save(
@@ -54,6 +59,11 @@ test("旧库从创建版本或创建者身份补全，不能把后来的编辑�
         admin: false,
       });
     for (const d of [original, fallback, unknown]) {
+      store.share(
+        d.id,
+        { visibility: "everyone", recipients: [], accessRevision: 1 },
+        { id: "local-admin", name: "管理员", admin: true },
+      );
       const lock = store.acquire(d.id, b.actor, "test-editor");
       store.save(
         d.id,
