@@ -1,0 +1,315 @@
+.shared-library,
+.shared-login {
+  min-height: 100vh;
+  background: #f5f7f4;
+  color: #23372c;
+  font-family: inherit;
+}
+.shared-library {
+  padding: 0 max(32px, calc((100vw - 1250px) / 2)) 36px;
+  overflow: auto;
+  height: 100vh;
+}
+.shared-library header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 26px 0;
+  border-bottom: 1px solid #dbe4dd;
+  gap: 20px;
+}
+.shared-brand {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 22px;
+  color: #224b34;
+  text-decoration: none;
+}
+.shared-brand span {
+  font-size: 13px;
+  color: #687b6e;
+  border-left: 1px solid #ccd7ce;
+  padding-left: 14px;
+}
+.shared-library button,
+.shared-login button,
+.shared-document-bar button {
+  padding: 8px 14px;
+  border-radius: 7px;
+  border: 1px solid #cad8ce;
+  background: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.shared-library button:disabled,
+.shared-login button:disabled,
+.shared-document-bar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.shared-library button.primary,
+.shared-login button.primary,
+.shared-document-bar button.primary {
+  background: #24543a;
+  color: white;
+  border-color: #24543a;
+}
+.shared-library header button {
+  margin-left: 16px;
+}
+.shared-hero {
+  padding: 40px 0 24px;
+}
+.shared-kicker {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #617c69;
+}
+.shared-hero h1 {
+  font-size: 38px;
+  margin: 10px 0;
+}
+.shared-hero p,
+.shared-login p {
+  color: #63756a;
+  line-height: 1.8;
+}
+.shared-create {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  background: #eaf0e8;
+  padding: 22px;
+  border-radius: 12px;
+  margin-bottom: 30px;
+}
+.shared-create label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.shared-library input,
+.shared-login input {
+  border: 1px solid #c9d6cc;
+  border-radius: 6px;
+  background: white;
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+}
+.shared-create input {
+  width: 300px;
+}
+.shared-create a {
+  margin-left: auto;
+  padding: 10px;
+  color: #335f42;
+  font-size: 13px;
+}
+.shared-import {
+  position: relative;
+  padding: 10px 14px;
+  border: 1px solid #bccfbf;
+  border-radius: 7px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px !important;
+  overflow: hidden;
+}
+.shared-import input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+.shared-files {
+  background: white;
+  border: 1px solid #dbe4dd;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.shared-files-toolbar {
+  padding: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.shared-files-toolbar button {
+  border: 0;
+}
+.shared-files-toolbar .active {
+  background: #eaf2eb;
+  color: #24543a;
+}
+.shared-row {
+  display: grid;
+  grid-template-columns:
+    minmax(200px, 2fr) minmax(100px, 0.7fr) minmax(175px, 1.2fr) minmax(
+      150px,
+      1fr
+    )
+    130px;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 24px;
+  border-top: 1px solid #e9eeea;
+  font-size: 13px;
+}
+.shared-row a {
+  color: #264d35;
+  text-decoration: none;
+  font-weight: 600;
+}
+.shared-row small,
+.shared-version small {
+  display: block;
+  color: #7a897e;
+  font-size: 12px;
+  margin-top: 7px;
+}
+.shared-table-head {
+  background: #f9fbf8;
+  color: #7a897e;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 12px;
+}
+.shared-library footer {
+  padding-top: 25px;
+  font-size: 12px;
+  color: #7c8a80;
+}
+.shared-empty {
+  padding: 65px;
+  text-align: center;
+  color: #708177;
+}
+.shared-login {
+  display: grid;
+  place-items: center;
+}
+.shared-login form,
+.shared-login > section {
+  width: min(460px, 90vw);
+  padding: 42px;
+  background: white;
+  border: 1px solid #d7e2da;
+  border-radius: 16px;
+  box-shadow: 0 18px 60px #243d3010;
+}
+.shared-login h1 {
+  font-size: 28px;
+}
+.shared-login label {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 20px 0;
+  font-size: 13px;
+}
+.shared-login button {
+  width: 100%;
+  margin: 8px 0 18px;
+}
+.shared-login small {
+  color: #788c7c;
+}
+.shared-document-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px;
+  background: #eef5ef;
+  border-bottom: 1px solid #cfdfd2;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.shared-document-bar a {
+  color: #285d3a;
+  text-decoration: none;
+  margin-right: 6px;
+}
+.shared-document-bar button {
+  font-size: 12px;
+  padding: 5px 9px;
+}
+.shared-notice {
+  flex: 1;
+  min-width: 200px;
+  color: #617667;
+}
+.shared-editing {
+  color: #267343;
+}
+.shared-readonly {
+  color: #7d6a38;
+}
+.shared-versions {
+  max-height: 80vh;
+  overflow: auto;
+  min-width: 560px;
+}
+.shared-version {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 25px;
+  padding: 16px 0;
+  border-top: 1px solid #e3e9e4;
+}
+.shared-versions p {
+  line-height: 1.7;
+  color: #78877c;
+}
+.shared-local-link {
+  padding: 0 8px;
+  color: #3e684a;
+  font-size: 12px;
+}
+.shared-table {
+  overflow-x: auto;
+}
+.shared-share {
+  width: min(560px, calc(100vw - 40px));
+  color: #23372c;
+}
+.shared-share::backdrop {
+  background: #14271d66;
+}
+.shared-share label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+.shared-share input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #c9d6cc;
+  border-radius: 6px;
+  font: inherit;
+}
+@media (max-width: 900px) {
+  .shared-create {
+    flex-wrap: wrap;
+  }
+  .shared-library {
+    padding: 0 20px 24px;
+  }
+  .shared-row {
+    min-width: 760px;
+  }
+  .shared-library header {
+    align-items: flex-start;
+  }
+  .shared-brand span {
+    display: none;
+  }
+  .shared-create input {
+    width: 220px;
+  }
+}

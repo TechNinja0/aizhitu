@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.superpowers/
+artifacts/
+.DS_Store
+*.log
+
+# 用户生成的图稿与本地输出
+output/
+coverage/
+playwright-report/
+test-results/
+
+# 本机配置与凭据
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+.idea/
+.vscode/
+.agents/
+.qoder/
+
+# 共享工作区数据库与日志
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+workspace-data/

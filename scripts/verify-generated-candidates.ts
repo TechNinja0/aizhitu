@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {chromium} from 'playwright';
+import {startServer} from '../apps/local-server/server.ts';import {emptyDocument,validate} from '../packages/document-core/index.ts';
+const server=await startServer({port:0}),browser=await chromium.launch({channel:'chromium'}),page=await browser.newPage({viewport:{width:1440,height:900}});const checks:any[]=[];
+try{
+ await page.goto(server.origin);await page.getByText('9 个节点 · 6 条连线').waitFor();const frame=page.frames()[1];const invoke=(method:string,args:any={})=>frame.evaluate(({method,args})=>(window as any).workbench.invoke(method,args),{method,args});
+ for(const [provider,file] of [['qoder','artifacts/chat-qoder-screenshot.drawio'],['codex','artifacts/chat-codex.drawio']]){
+  const candidate=await fs.readFile(file,'utf8'),v=validate(candidate);assert.ok(v.ok);let base=emptyDocument('真实客户端候选应用');base=base.replaceAll(validate(base).metadata!.documentId,v.metadata!.documentId);await invoke('load',{xml:base});const before=validate((await invoke('snapshot')).xml).contentHash;
+  await page.getByLabel('候选图稿文件').setInputFiles(file);const modal=page.getByRole('dialog',{name:'AI 候选差异'});await modal.waitFor();await modal.getByRole('button',{name:'预览候选图',exact:true}).click();const preview=page.getByRole('dialog',{name:'候选大图预览'});await preview.getByAltText('AI 候选图稿预览').waitFor();await preview.getByAltText('AI 候选图稿预览').evaluate((i:HTMLImageElement)=>i.decode());await page.screenshot({path:`artifacts/${provider}-actual-candidate-preview.png`});await preview.getByLabel('关闭候选预览').click();await modal.getByRole('button',{name:'应用候选（可一步撤销）',exact:true}).click();await modal.waitFor({state:'hidden'});const after=validate((await invoke('snapshot')).xml);assert.equal(after.contentHash,v.contentHash);await invoke('action',{name:'undo'});assert.equal(validate((await invoke('snapshot')).xml).contentHash,before);checks.push({provider,nodes:v.stats.nodes,edges:v.stats.edges,status:'passed'});console.log('PASS',provider,'real generated candidate previews, applies without content loss and undoes');
+ }
+ await fs.writeFile('artifacts/real-candidate-ui-results.json',JSON.stringify({ok:true,checks},null,2));
+}finally{await browser.close();await server.close();}

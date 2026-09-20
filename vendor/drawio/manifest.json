@@ -1,0 +1,130 @@
+{
+  "version": "31.4.6",
+  "files": [
+    {
+      "path": "index.html",
+      "sha256": "e1d2cc03e8f21296e14869e302c84781e8b4768615d6ef4260caa50e7fa26d59",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/index.html"
+    },
+    {
+      "path": "js/bootstrap.js",
+      "sha256": "e0ebe88fe83bdce09d5836306285891f2d6f259bf76677056a071bbba7cc0c9d",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/bootstrap.js"
+    },
+    {
+      "path": "js/main.js",
+      "sha256": "f2967ad73f4d8d20d8a910208a9ae8998d8c0dbaba90f5be049105b8496aa01d",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/main.js"
+    },
+    {
+      "path": "js/app.min.js",
+      "sha256": "4c926b6baa1bf43fb764a7f43008b554f144a47eeed7ce822cfa102cae9eadca",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/app.min.js"
+    },
+    {
+      "path": "styles/grapheditor.css",
+      "sha256": "b832d55c5732f4b00f610204eba40373f338d482523503efc81b85cec9e211b2",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/styles/grapheditor.css"
+    },
+    {
+      "path": "styles/high-contrast.css",
+      "sha256": "06173c9ab9d1715004f6040beb3d75b7fcec4a3029e3304b0c32c0baeb1732b5",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/styles/high-contrast.css"
+    },
+    {
+      "path": "resources/dia.txt",
+      "sha256": "cbbc96967a687a78a18eedf723925de0f3b51a9a9a6b05d4147839df6076772f",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/resources/dia.txt"
+    },
+    {
+      "path": "resources/dia_zh.txt",
+      "sha256": "183ea1fb925e9762da01451152389b1648ae40da9931553159265cae9e087269",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/resources/dia_zh.txt"
+    },
+    {
+      "path": "js/diagramly/EditorUi.js",
+      "sha256": "273d67886cc8e8974c6827ab0bcc0d310a73f6ec7a4246c0562473b7e1e4036a",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/diagramly/EditorUi.js"
+    },
+    {
+      "path": "js/diagramly/Editor.js",
+      "sha256": "4485cca36f2aee0b2a0505b979a9662799a1d2bae8d12d362cf03b4613c5ecaf",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/diagramly/Editor.js"
+    },
+    {
+      "path": "js/diagramly/Init.js",
+      "sha256": "887f97862b758a01546c04104a71972497b5e36454e7903376f362e16ecb3c2e",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/diagramly/Init.js"
+    },
+    {
+      "path": "js/diagramly/App.js",
+      "sha256": "c9dd6a89ae68bfc9ef34ecda9ebea602a87d842a78a16857fb24b4c6a8deb67d",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/diagramly/App.js"
+    },
+    {
+      "path": "js/grapheditor/Graph.js",
+      "sha256": "aaf438b145c1ff29f5c94344a8c4383c2b6a50d63fa8ce6c41d61b08fd9a7ade",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/grapheditor/Graph.js"
+    },
+    {
+      "path": "js/grapheditor/Editor.js",
+      "sha256": "2ffd4df12d224663a0ebdc8e14ffc94241f4390cc9c1afddd36e2f9ca2c3729b",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/grapheditor/Editor.js"
+    },
+    {
+      "path": "js/grapheditor/EditorUi.js",
+      "sha256": "b7bcb845821eb02cb893000e22421be2da53485085391f6f6ebd95187dffef80",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/grapheditor/EditorUi.js"
+    },
+    {
+      "path": "js/grapheditor/Sidebar.js",
+      "sha256": "d391d21ce7f4f02cd69749a6230f4313247cc456671e3facb7d8c04dc2cb2726",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/js/grapheditor/Sidebar.js"
+    },
+    {
+      "path": "mxgraph/css/common.css",
+      "sha256": "080278000f2a3bdba6d29f426f24654b5041539d3c4868a9434028e141db92a7",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/mxgraph/css/common.css"
+    },
+    {
+      "path": "mxgraph/css/explorer.css",
+      "sha256": "4699a378dc64e9d4b1d4b67bd1e300642dc8e58606057c544bc11af35b438c6d",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/mxgraph/css/explorer.css"
+    },
+    {
+      "path": "images/spin.gif",
+      "sha256": "b0b95550a1165553d821f6d82a4e8d07b90858f297c3df53aa52819ef659a685",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/images/spin.gif"
+    },
+    {
+      "path": "images/transparent.gif",
+      "sha256": "3317f2023f9198ebaa1247c09643f0fa5b16db15461e70066e6a27abdae24931",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/images/transparent.gif"
+    },
+    {
+      "path": "images/close.png",
+      "sha256": "c154cd23c1b7b22d08e54e52d36982330a78ddb569db9dcc32390e48477c36b0",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/images/close.png"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/LICENSE"
+    },
+    {
+      "path": "README.md",
+      "sha256": "7d728dc2b3f67bb48126bf194bdb31d831bff9c081f421456522f5ceadc5d299",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/README.md"
+    },
+    {
+      "path": "VERSION",
+      "sha256": "a1616d9788c30569a194512e848ec09395b71a158a912667ec1c7bd78183d617",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/VERSION"
+    },
+    {
+      "path": "images/github-logo.svg",
+      "sha256": "b88f1122c7f5d3ccba71a64754493e764caecde79481b81449999847548d3d84",
+      "source": "https://cdn.jsdelivr.net/gh/jgraph/drawio@v31.4.6/src/main/webapp/images/github-logo.svg"
+    }
+  ]
+}

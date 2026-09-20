@@ -1,0 +1,64 @@
+html,
+body,
+.geEditor {
+  font-family: "Noto Sans SC", sans-serif !important;
+}
+.geMenubarContainer,
+.geFooterContainer {
+  display: none !important;
+}
+.geSidebarContainer,
+.geFormatContainer {
+  background: #fafbf9 !important;
+}
+.geSidebarContainer {
+  border-right: 1px solid #e1e5e2 !important;
+}
+.geToolbarContainer {
+  background: #fff !important;
+  border-bottom: 1px solid #e1e5e2 !important;
+}
+.geDiagramContainer {
+  background-color: #f3f5f2 !important;
+}
+.geSidebar .geTitle {
+  font-family: "Noto Sans SC", sans-serif !important;
+  color: #33483f !important;
+}
+#geStatus {
+  padding: 48px;
+  text-align: center;
+  color: #4d6659;
+}
+body {
+  margin: 0;
+}
+.geTabContainer,
+.geSidebarFooter {
+  display: none !important;
+}
+.geToolbarContainer a[title^="插入"],
+.geToolbarContainer a[title="形状"],
+.geToolbarContainer a[title="表格"],
+.geToolbarContainer a[title^="自由绘图"],
+.geToolbarContainer a[title="布局"] {
+  display: none !important;
+}
+.geDiagramContainer {
+  background-image: none !important;
+}
+.geSidebar a.geItem {
+  margin: 5px !important;
+}
+/* The profile exposes built-in primitives, not upstream sketch/text-flow extensions. */
+.geFormatContainer select[title="填充"],
+.geFormatContainer div:has(> input[title="草图"]),
+.geFormatContainer div:has(> table) {
+  display: none !important;
+}
+
+/* Holding Space pans the viewport, including when dragging over a shape. */
+.geDiagramContainer.workbench-pan, .geDiagramContainer.workbench-pan * { cursor: grab !important; }
+.geDiagramContainer.workbench-panning, .geDiagramContainer.workbench-panning * { cursor: grabbing !important; }
+
+.workbench-readonly .geSidebarContainer, .workbench-readonly .geFormatContainer { pointer-events: none; opacity: .45; }

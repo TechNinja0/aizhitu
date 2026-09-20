@@ -1,0 +1,59 @@
+{
+  "name": "ai-zhitu",
+  "version": "1.2.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22"
+  },
+  "bin": {
+    "diagram": "bin/diagram.mjs",
+    "zhitu": "bin/zhitu.mjs"
+  },
+  "scripts": {
+    "dev": "tsx apps/local-server/main.ts --dev",
+    "start": "tsx apps/local-server/main.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "tsx tests/e2e.ts",
+    "test:templates": "tsx --test tests/templates.test.ts && tsx tests/templates-e2e.ts",
+    "test:capabilities": "tsx tests/capabilities.ts",
+    "diagram": "tsx packages/cli/main.ts",
+    "setup": "node scripts/setup.mjs",
+    "check": "npm run build && npm test && npm run test:e2e && npm run test:templates && npm run test:interactions && npm run test:capabilities && npm run test:images && npm run test:enhancements && npm run test:ai-chat && npm run test:product-audit && npm run test:product-polish && npm run test:shared && npm run test:share",
+    "test:interactions": "tsx tests/interactions.ts",
+    "test:images": "tsx tests/image-export.ts",
+    "docs:check": "node scripts/check-doc-links.mjs",
+    "start:local": "node bin/zhitu.mjs",
+    "package:local": "npm run build && node scripts/package-share.mjs",
+    "test:ai-chat": "tsx tests/ai-chat-e2e.ts",
+    "test:enhancements": "tsx tests/enhancements.ts",
+    "test:product-audit": "tsx tests/product-audit.ts",
+    "test:product-polish": "tsx tests/product-polish.ts",
+    "test:shared": "tsx tests/shared-e2e.ts",
+    "test:share": "tsx tests/share-e2e.ts"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-sc": "5.3.0",
+    "@xmldom/xmldom": "0.9.12",
+    "express": "5.2.1",
+    "playwright": "1.63.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "saxes": "6.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "pdfjs-dist": "6.3.289",
+    "prettier": "3.9.8",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  },
+  "description": "AI智图 · AI 辅助制图工作台",
+  "license": "Apache-2.0"
+}
