@@ -1,4 +1,8 @@
-import { registerPage } from "./account-fixtures.ts";
+import {
+  enterEditing,
+  waitForEditable,
+  registerPage,
+} from "./account-fixtures.ts";
 import { chromium, expect, type Page } from "playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -106,7 +110,7 @@ try {
   await invoke(a, "action", { name: "selectAll" });
   await invoke(a, "color", { key: "fillColor", value: "#abcdef" });
   await a.waitForURL("**/documents/*", { timeout: 20000 });
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(a);
   const id = a.url().split("/").pop()!;
   assert.equal(count(), 1);
   assert.match(server.workspace!.get(id).xml, /abcdef/);
@@ -131,7 +135,7 @@ try {
   await create("主动保存空白");
   await a.getByRole("button", { name: "保存到文件库", exact: true }).click();
   await a.waitForURL("**/documents/*");
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(a);
   await back(a);
   assert.equal(count(), 2);
   await create("只改名称");
@@ -147,7 +151,7 @@ try {
   assert.equal(count(), 3);
   await a.getByLabel("图稿文件名").fill("修正后的文件名");
   await a.waitForURL("**/documents/*");
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(a);
   await back(a);
   await row(a, "修正后的文件名").waitFor();
   console.log("PASS 首次保存名称校验失败后可以修正，修正后自动保存成功");
@@ -171,7 +175,7 @@ try {
   await a.getByRole("button", { name: "重试保存", exact: true }).waitFor();
   await a.getByRole("button", { name: "重试保存", exact: true }).click();
   await a.waitForURL("**/documents/*");
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(a);
   assert.equal(count(), 5);
   await a.unroute("**/api/documents");
   await back(a);
@@ -194,6 +198,10 @@ try {
   await permissions
     .getByRole("radio", { name: "所有成员", exact: true })
     .check();
+  await a
+    .getByRole("dialog")
+    .getByRole("radio", { name: "可编辑", exact: true })
+    .check();
   await permissions
     .getByRole("button", { name: "保存分享权限", exact: true })
     .click();
@@ -205,8 +213,7 @@ try {
   await row(b, "返回前改名")
     .getByRole("link", { name: "返回前改名", exact: true })
     .click();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await enterEditing(b);
   await expect(
     row(a, "返回前改名").getByRole("button", {
       name: "移入回收站",
@@ -237,7 +244,7 @@ try {
   await a.screenshot({ path: "artifacts/library-management.png" });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS 分享后其他成员可见、单人编辑锁、批量回收和恢复、浏览器无异常",
+    "PASS 分享后其他成员可见、协同占用保护、批量回收和恢复、浏览器无异常",
   );
 } finally {
   await browser.close();

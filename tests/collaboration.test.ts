@@ -116,7 +116,12 @@ test("协同持久化、跨连接事务、重发幂等、会话隔离、撤权�
     const d = store.create("协作", source, a);
     store.share(
       d.id,
-      { visibility: "selected", recipients: [b.id], accessRevision: 1 },
+      {
+        visibility: "selected",
+        role: "edit",
+        recipients: [b.id],
+        accessRevision: 1,
+      },
       a,
     );
     const sa = store.collaboration.join(d.id, a, "client-aa"),
@@ -204,7 +209,12 @@ test("协同持久化、跨连接事务、重发幂等、会话隔离、撤权�
     assert.throws(() => peer.collaboration.sync(d.id, oldB, b), status(404));
     store.share(
       d.id,
-      { visibility: "everyone", recipients: [], accessRevision: 3 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 3,
+      },
       a,
     );
     assert.throws(() => peer.collaboration.sync(d.id, oldB, b), status(423));
@@ -267,7 +277,12 @@ test("并发改名、循环合并回滚、伪造文档和无效图稿不能部�
     const d = store.create("原名", source, a);
     store.share(
       d.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       a,
     );
     const sa = store.collaboration.join(d.id, a, "client-aa");
@@ -354,6 +369,96 @@ test("并发改名、循环合并回滚、伪造文档和无效图稿不能部�
     );
   } finally {
     store.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("协同整稿操作：仅当前页面可恢复或删除，其他页面、伪造令牌和过期版本受保护", async () => {
+  const dir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "zhitu-collab-management-"),
+  );
+  const store = new WorkspaceStore(dir);
+  const peer = new WorkspaceStore(dir);
+  try {
+    const a = store.enter("甲").actor,
+      b = store.enter("乙").actor;
+    const d = store.create("原始", source, a);
+    store.share(
+      d.id,
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
+      a,
+    );
+    const own = store.collaboration.join(d.id, a, "client-aa");
+    const other = peer.collaboration.join(d.id, a, "client-twin");
+    const status = (n: number) => (e: unknown) =>
+      e instanceof HttpError && e.status === n;
+    let input = { collaborationToken: own.token, revision: d.revision };
+    assert.throws(() => store.restore(d.id, 1, input, a), status(423));
+    assert.throws(() => store.trash(d.id, input, a, true), status(423));
+    assert.equal(store.get(d.id).revision, 1);
+    peer.collaboration.leave(d.id, a, other.token);
+    assert.throws(
+      () =>
+        store.restore(d.id, 1, { ...input, collaborationToken: "forged" }, a),
+      status(423),
+    );
+    assert.throws(() => store.restore(d.id, 1, input, b), status(423));
+    const changed = store.collaboration.sync(
+      d.id,
+      {
+        token: own.token,
+        revision: 1,
+        requestId: randomUUID(),
+        name: "改名",
+        xml: change(d.xml, "start", { value: "改动" }),
+      },
+      a,
+    ).document;
+    assert.throws(() => store.restore(d.id, 1, input, a), status(409));
+    input.revision = changed.revision;
+    const restored = store.restore(d.id, 1, input, a);
+    assert.equal(restored.revision, 3);
+    assert.equal(restored.name, "原始");
+    assert.equal(value(restored.xml, "start").label, "提交申请");
+    assert.equal(store.collaboration.members(d.id).length, 1);
+    const guest = peer.collaboration.join(d.id, b, "client-bb");
+    assert.throws(
+      () => store.trash(d.id, { ...input, revision: 3 }, a, true),
+      status(423),
+    );
+    assert.throws(
+      () =>
+        store.trash(
+          d.id,
+          { collaborationToken: guest.token, revision: 3 },
+          b,
+          true,
+        ),
+      status(403),
+    );
+    peer.collaboration.leave(d.id, b, guest.token);
+    const deleted = store.trash(d.id, { ...input, revision: 3 }, a, true);
+    assert.equal(deleted.deleted, 1);
+    assert.equal(
+      store.db
+        .prepare("SELECT count(*) AS n FROM collaborators WHERE documentId=?")
+        .get(d.id)!.n,
+      0,
+    );
+    assert.throws(
+      () => store.collaboration.state(d.id, a, own.token),
+      status(404),
+    );
+    store.trash(d.id, { revision: deleted.revision }, a, false);
+    assert.ok(store.collaboration.join(d.id, b, "client-bb").token);
+  } finally {
+    store.close();
+    peer.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
 });

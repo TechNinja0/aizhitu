@@ -92,6 +92,27 @@ export class WorkspaceStore {
         PRIMARY KEY(documentId,memberId));`);
     });
     this.transaction(() => {
+      if (
+        !this.db
+          .prepare("PRAGMA table_info(documents)")
+          .all()
+          .some((c) => c.name === "shareRole")
+      ) {
+        this.db.exec(
+          "ALTER TABLE documents ADD COLUMN shareRole TEXT NOT NULL DEFAULT 'view'; UPDATE documents SET shareRole='edit' WHERE visibility<>'private'",
+        );
+      }
+      if (
+        !this.db
+          .prepare("PRAGMA table_info(document_members)")
+          .all()
+          .some((c) => c.name === "role")
+      )
+        this.db.exec(
+          "ALTER TABLE document_members ADD COLUMN role TEXT NOT NULL DEFAULT 'edit'",
+        );
+    });
+    this.transaction(() => {
       // Former server drafts become ordinary private files without touching content/history.
       this.db
         .exec(`DELETE FROM document_members WHERE documentId IN (SELECT id FROM documents WHERE draft=1);
@@ -190,12 +211,13 @@ export class WorkspaceStore {
     const { where, params } = this.listFilter(deleted, actor, view, mine);
     return this.db
       .prepare(
-        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
+        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision,shareRole
       FROM documents WHERE ${where} ORDER BY updatedAt DESC,id`,
       )
       .all(...params)
       .map((d) => ({
         ...(d as unknown as DocumentSummary),
+        canEdit: !!actor && this.canEdit(d, actor),
         lock: this.publicLock(d.id as string),
         collaborators: deleted
           ? []
@@ -247,12 +269,13 @@ export class WorkspaceStore {
     );
     const items = this.db
       .prepare(
-        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
+        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision,shareRole
       FROM documents WHERE ${where} ORDER BY updatedAt DESC,id LIMIT ? OFFSET ?`,
       )
       .all(...params, pageSize, (currentPage - 1) * pageSize)
       .map((d) => ({
         ...(d as unknown as DocumentSummary),
+        canEdit: !!actor && this.canEdit(d, actor),
         lock: this.publicLock(d.id as string),
         collaborators: deleted
           ? []
@@ -280,6 +303,27 @@ export class WorkspaceStore {
               .get(d.id, actor.id))))
     );
   }
+  canEdit(d: any, actor: Actor): boolean {
+    if (!this.allowed(d, actor)) return false;
+    if (actor.admin || d.owner === actor.id) return true;
+    return d.visibility === "everyone"
+      ? d.shareRole === "edit"
+      : this.db
+          .prepare(
+            "SELECT role FROM document_members WHERE documentId=? AND memberId=?",
+          )
+          .get(d.id, actor.id)?.role === "edit";
+  }
+  requireEdit(id: string, actor: Actor) {
+    const d = this.access(id, actor);
+    if (!this.canEdit(d, actor))
+      throw new HttpError(403, "当前仅有查看权限，不能修改图稿");
+    return d;
+  }
+  describe(id: string, actor: Actor) {
+    const d = this.access(id, actor);
+    return { ...d, canEdit: this.canEdit(d, actor) };
+  }
   members() {
     return this.db
       .prepare(
@@ -295,6 +339,18 @@ export class WorkspaceStore {
       visibility: d.visibility as Visibility,
       accessRevision: d.accessRevision,
       canManage,
+      canEdit: this.canEdit(d, actor),
+      role: d.shareRole,
+      recipientRoles: canManage
+        ? Object.fromEntries(
+            this.db
+              .prepare(
+                "SELECT memberId,role FROM document_members WHERE documentId=?",
+              )
+              .all(id)
+              .map((r) => [r.memberId, r.role]),
+          )
+        : {},
       recipients: canManage
         ? this.db
             .prepare(
@@ -344,25 +400,51 @@ export class WorkspaceStore {
             "所选成员不存在或已退出，请重新打开分享窗口选择",
           );
       }
+      // Omitted roles preserve existing grants; new shares inherit the view-only default.
+      const role = input.role ?? d.shareRole;
+      const previousRoles = Object.fromEntries(
+        this.db
+          .prepare(
+            "SELECT memberId,role FROM document_members WHERE documentId=?",
+          )
+          .all(id)
+          .filter((m) => recipients.includes(String(m.memberId)))
+          .map((m) => [String(m.memberId), m.role]),
+      );
+      const roles = input.recipientRoles ?? previousRoles;
+      if (
+        !["view", "edit"].includes(role) ||
+        !roles ||
+        typeof roles !== "object" ||
+        Array.isArray(roles) ||
+        Object.entries(roles).some(
+          ([id, value]) =>
+            !recipients.includes(id) ||
+            !["view", "edit"].includes(value as string),
+        )
+      )
+        throw new HttpError(400, "分享权限无效");
       this.db
         .prepare("DELETE FROM document_members WHERE documentId=?")
         .run(id);
       for (const member of recipients)
         this.db
-          .prepare("INSERT INTO document_members VALUES (?,?)")
-          .run(id, member);
+          .prepare(
+            "INSERT INTO document_members (documentId,memberId,role) VALUES (?,?,?)",
+          )
+          .run(id, member, roles[member] ?? role);
       this.db
         .prepare(
-          "UPDATE documents SET visibility=?,accessRevision=accessRevision+1 WHERE id=?",
+          "UPDATE documents SET visibility=?,shareRole=?,accessRevision=accessRevision+1 WHERE id=?",
         )
-        .run(visibility, id);
+        .run(visibility, role, id);
       for (const member of this.db
         .prepare(
           "SELECT owner,client,name FROM collaborators WHERE documentId=?",
         )
         .all(id)) {
         if (
-          !this.allowed(this.get(id), {
+          !this.canEdit(this.get(id), {
             id: String(member.owner),
             name: String(member.name),
             admin: member.owner === "local-admin",
@@ -377,7 +459,7 @@ export class WorkspaceStore {
       const lock = this.lock(id);
       if (
         lock &&
-        !this.allowed(this.get(id), {
+        !this.canEdit(this.get(id), {
           id: lock.owner,
           name: lock.name,
           admin: lock.owner === "local-admin",
@@ -569,11 +651,11 @@ export class WorkspaceStore {
       : null;
   }
   acquire(id: string, actor: Actor, client: unknown) {
-    this.access(id, actor);
+    this.requireEdit(id, actor);
     if (typeof client !== "string" || !/^[\w-]{8,100}$/.test(client))
       throw new HttpError(400, "页面身份无效");
     return this.transaction(() => {
-      this.access(id, actor);
+      this.requireEdit(id, actor);
       this.collaboration.idle(id);
       const existing = this.lock(id);
       if (
@@ -596,7 +678,7 @@ export class WorkspaceStore {
     });
   }
   requireLock(id: string, actor: Actor, token: unknown): Lease {
-    this.access(id, actor);
+    this.requireEdit(id, actor);
     const l = this.lock(id);
     if (!l || l.owner !== actor.id || l.token !== token)
       throw new HttpError(423, "编辑权已失效，请保留修改并重新获取编辑权");
@@ -671,6 +753,21 @@ export class WorkspaceStore {
     return v;
   }
   restore(id: string, rev: number, input: any, actor: Actor) {
+    if (input.collaborationToken) {
+      return this.transaction(() => {
+        this.collaboration.exclusive(id, actor, input.collaborationToken);
+        const d = this.get(id);
+        this.revision(d, input.revision);
+        const v = this.version(id, rev);
+        this.db
+          .prepare(
+            "UPDATE documents SET xml=?,name=?,revision=revision+1,updatedBy=?,updatedAt=? WHERE id=?",
+          )
+          .run(v.xml, v.name, actor.name, this.now(), id);
+        this.record(id, `恢复版本 ${rev}`);
+        return this.get(id);
+      });
+    }
     const v = this.version(id, rev);
     return this.save(
       id,
@@ -689,13 +786,18 @@ export class WorkspaceStore {
           409,
           deleted ? "文档已经在回收站" : "文档未被删除，无需恢复",
         );
-      if (deleted) this.requireLock(id, actor, input.lockToken);
+      if (deleted) {
+        if (input.collaborationToken)
+          this.collaboration.exclusive(id, actor, input.collaborationToken);
+        else this.requireLock(id, actor, input.lockToken);
+      }
       this.db
         .prepare(
           "UPDATE documents SET deleted=?,revision=revision+1,updatedBy=?,updatedAt=? WHERE id=?",
         )
         .run(Number(deleted), actor.name, this.now(), id);
       this.record(id, deleted ? "移入回收站" : "从回收站恢复");
+      this.db.prepare("DELETE FROM collaborators WHERE documentId=?").run(id);
       this.db.prepare("DELETE FROM leases WHERE id=?").run(id);
     });
     return this.get(id, true);

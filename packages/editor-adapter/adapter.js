@@ -665,7 +665,7 @@ import { mergeXml, equivalentXml } from "./collaboration.js";
       invoke: async (method, args = {}) => {
         if (!Object.prototype.hasOwnProperty.call(methods, method))
           throw Error("未知操作");
-        if (readOnly && !["capabilities", "setReadOnly", "load", "collaborationMode", "collaborationApply", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance"].includes(method)) throw Error("当前为只读，请先获取编辑权");
+        if (readOnly && !["capabilities", "setReadOnly", "load", "collaborationMode", "collaborationApply", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance"].includes(method)) throw Error("当前仅查看，请切换到编辑态；如无编辑权限，请联系文件所有者");
         return methods[method](args);
       },
     };

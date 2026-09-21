@@ -37,7 +37,12 @@ test("文档：浏览器身份、独立 ID、跨连接锁、过期接管、冲�
       second = store.create("另一张图", example, b.actor);
     store.share(
       doc.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       a.actor,
     );
     assert.notEqual(doc.id, second.id);
@@ -195,7 +200,9 @@ test("共享 API：鉴权、同时抢锁、保存版本竞争、AI 排队和任�
     const login = async (name: string) =>
       (
         await request("", "auth/register", "POST", {
-          login: "member-" + (name === "甲" ? "a" : "b"), password: "Account-testing-2026-safe", name,
+          login: "member-" + (name === "甲" ? "a" : "b"),
+          password: "Account-testing-2026-safe",
+          name,
         })
       ).data;
     const a = await login("甲"),
@@ -229,6 +236,7 @@ test("共享 API：鉴权、同时抢锁、保存版本竞争、AI 排队和任�
     ).data;
     await request(a.token, `documents/${d.id}/sharing`, "PUT", {
       visibility: "everyone",
+      role: "edit",
       recipients: [],
       accessRevision: 1,
     });

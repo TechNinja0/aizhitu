@@ -292,6 +292,7 @@ function App() {
     setStatus("本地示例 · 编辑后保存为自己的图稿");
   }
   async function guard(action: () => Promise<void>) {
+    if (shared.id) { await shared.beforeNavigate(action); return; }
     if (state.current.dirty) {
       pendingAction.current = action;
       setPending(true);
@@ -322,8 +323,8 @@ function App() {
   }
   async function fillFromTemplate(template: TemplateChoice | null) {
     if (!template) return;
-    if (shared.id && !shared.editing) await shared.acquire();
-    // Acquiring a shared lease reloads the latest server state; recheck emptiness afterward.
+    if (shared.id) await shared.ensureEditable();
+    // Remote edits may arrive while the picker is open; recheck before applying.
     const current = await bridge.invoke("snapshot");
     if (current.counts.nodes || current.counts.edges) throw Error("当前画布已有内容，未应用模板。请关闭浮窗后检查图稿。");
     const checked = await (await api("validate", { xml: await resolveTemplateXml(template, state.current.name, current.metadata) })).json();
@@ -639,7 +640,7 @@ function App() {
       {shared.panel}
       {pendingDocument.panel}
       {pendingDocument.overlay}
-      {boot.shared && !shared.id && !pendingDocument.active && <div className="shared-document-bar"><a href="/">← 文件库</a><span>本地临时画布 · 主动保存后进入文件库，默认仅自己可见</span><button disabled={!ready} onClick={async () => { try { const snapshot = await bridge.invoke("snapshot"); const d = await workspaceApi("documents", { name, xml: snapshot.xml }); sessionStorage.setItem(`zhitu-edit:${d.id}`, "1"); location.assign("/documents/" + d.id); } catch (e) { showError(e); } }}>保存到文件库</button></div>}
+      {boot.shared && !shared.id && !pendingDocument.active && <div className="shared-document-bar"><a href="/">← 文件库</a><span>本地临时画布 · 主动保存后进入文件库，默认仅自己可见</span><button disabled={!ready} onClick={async () => { try { const snapshot = await bridge.invoke("snapshot"); const d = await workspaceApi("documents", { name, xml: snapshot.xml }); location.assign("/documents/" + d.id); } catch (e) { showError(e); } }}>保存到文件库</button></div>}
       <nav className="commandbar" aria-label="文件与画布操作">
         <div className="command-group">
           <button

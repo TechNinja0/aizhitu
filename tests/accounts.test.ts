@@ -99,6 +99,7 @@ test("旧身份补设保留文件和授权，不允许同名注册认领，重�
       d.id,
       {
         visibility: "selected",
+        role: "edit",
         recipients: [recipient.actor.id],
         accessRevision: 1,
       },
@@ -213,7 +214,12 @@ test("停用、启用、受保护删除及文件转移原子性、内容历史�
       draft = s.create("草稿", undefined, a.actor, true);
     s.share(
       d.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       a.actor,
     );
     assert.throws(() => s.accounts.list(a.actor), fails(403));
@@ -379,16 +385,48 @@ test("只剩个人模板的历史身份也进入管理列表，可原 ID 找回�
   const { TemplateStore } = await import("../apps/local-server/templates.ts");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "zhitu-template-owner-"));
   const templates = new TemplateStore(dir);
-  templates.db.prepare("INSERT INTO templates VALUES (?,?,?,?,?,?,?,?,?,?)").run("legacy-template", "legacy-owner", "旧模板", "", "architecture", "saved-xml", "saved-preview", 1, 0, Date.now());
+  templates.db
+    .prepare("INSERT INTO templates VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(
+      "legacy-template",
+      "legacy-owner",
+      "旧模板",
+      "",
+      "architecture",
+      "saved-xml",
+      "saved-preview",
+      1,
+      0,
+      Date.now(),
+    );
   templates.close();
-  const server = await startServer({ port: 0, shared: true, dataDirectory: dir });
+  const server = await startServer({
+    port: 0,
+    shared: true,
+    dataDirectory: dir,
+  });
   try {
-    const user = server.workspace!.accounts.list(admin).find(u => u.id === "legacy-owner")!;
+    const user = server
+      .workspace!.accounts.list(admin)
+      .find((u) => u.id === "legacy-owner")!;
     assert.equal(user.name, "历史模板用户");
-    const reset = server.workspace!.accounts.reset(admin, "legacy-owner", { revision: user.revision, login: "recovered" });
-    const recovered = await server.workspace!.accounts.redeem({ code: reset.resetCode, password });
+    const reset = server.workspace!.accounts.reset(admin, "legacy-owner", {
+      revision: user.revision,
+      login: "recovered",
+    });
+    const recovered = await server.workspace!.accounts.redeem({
+      code: reset.resetCode,
+      password,
+    });
     assert.equal(recovered.actor.id, "legacy-owner");
-    const rows = await (await fetch(server.origin + "/api/templates", { headers: { Authorization: "Bearer " + recovered.token } })).json();
+    const rows = await (
+      await fetch(server.origin + "/api/templates", {
+        headers: { Authorization: "Bearer " + recovered.token },
+      })
+    ).json();
     assert.equal(rows[0].id, "legacy-template");
-  } finally { await server.close(); await fs.rm(dir, { recursive: true, force: true }); }
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

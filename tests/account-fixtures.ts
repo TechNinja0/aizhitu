@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Page } from "playwright/test";
+import { expect, type Page } from "playwright/test";
 export const testPassword = "123456";
 export async function registerPage(
   page: Page,
@@ -14,4 +14,19 @@ export async function registerPage(
   await page.getByRole("button", { name: "注册并进入", exact: true }).click();
   await page.getByRole("heading", { name: "文件库", exact: true }).waitFor();
   return login;
+}
+
+export async function waitForEditable(page: Page) {
+  await expect(page.getByLabel("图稿文件名", { exact: true })).toBeEnabled({
+    timeout: 20000,
+  });
+}
+
+// Use explicitly for scenarios that intend to edit a received share.
+export async function enterEditing(page: Page) {
+  const toggle = page.getByRole("button", { name: "编辑", exact: true });
+  await expect(toggle).toBeEnabled({ timeout: 20000 });
+  if ((await toggle.getAttribute("aria-pressed")) !== "true")
+    await toggle.click();
+  await waitForEditable(page);
 }

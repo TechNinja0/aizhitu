@@ -25,7 +25,12 @@ test("分享权限：保存保持私有、指定身份、所有成员、原子�
       () =>
         store.share(
           d.id,
-          { visibility: "everyone", recipients: [], accessRevision: 1 },
+          {
+            visibility: "everyone",
+            role: "edit",
+            recipients: [],
+            accessRevision: 1,
+          },
           a.actor,
         ),
       fails(409),
@@ -41,7 +46,12 @@ test("分享权限：保存保持私有、指定身份、所有成员、原子�
       visibility: string,
       recipients: string[],
       accessRevision = store.get(d.id).accessRevision,
-    ) => store.share(d.id, { visibility, recipients, accessRevision }, a.actor);
+    ) =>
+      store.share(
+        d.id,
+        { visibility, recipients, accessRevision, role: "edit" },
+        a.actor,
+      );
     for (const recipients of [
       [],
       ["missing"],
@@ -64,7 +74,12 @@ test("分享权限：保存保持私有、指定身份、所有成员、原子�
       () =>
         store.share(
           d.id,
-          { visibility: "everyone", recipients: [], accessRevision: 2 },
+          {
+            visibility: "everyone",
+            role: "edit",
+            recipients: [],
+            accessRevision: 2,
+          },
           b.actor,
         ),
       fails(403),
@@ -120,7 +135,12 @@ test("旧库迁移默认私有，保留内容和版本、移除未授权租约�
     const d = store.create("历史文件", undefined, a.actor);
     store.share(
       d.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       a.actor,
     );
     store.acquire(d.id, b.actor, "old-editor");
@@ -138,7 +158,12 @@ test("旧库迁移默认私有，保留内容和版本、移除未授权租约�
     assert.throws(() => store.access(d.id, b.actor), fails(404));
     store.share(
       d.id,
-      { visibility: "selected", recipients: [b.actor.id], accessRevision: 1 },
+      {
+        visibility: "selected",
+        role: "edit",
+        recipients: [b.actor.id],
+        accessRevision: 1,
+      },
       a.actor,
     );
     store.close();
@@ -182,6 +207,7 @@ test("API 对列表、直链、历史、编辑、AI 统一鉴权，不能伪造�
     const created = await request(a.token, "documents", "POST", {
       name: "私有文档",
       visibility: "everyone",
+      role: "edit",
       draft: false,
     });
     const d = created.data;
@@ -227,6 +253,7 @@ test("API 对列表、直链、历史、编辑、AI 统一鉴权，不能伪造�
             await request(token, base + suffix, "PUT", {
               ...d,
               visibility: "everyone",
+              role: "edit",
               recipients: [],
               accessRevision: 1,
             })
@@ -270,6 +297,7 @@ test("API 对列表、直链、历史、编辑、AI 统一鉴权，不能伪造�
       (
         await request(a.token, base + "/sharing", "PUT", {
           visibility: "selected",
+          role: "edit",
           recipients: [b.actor.id],
           accessRevision: 1,
         })
@@ -281,6 +309,7 @@ test("API 对列表、直链、历史、编辑、AI 统一鉴权，不能伪造�
       (
         await request(b.token, base + "/sharing", "PUT", {
           visibility: "everyone",
+          role: "edit",
           recipients: [],
           accessRevision: 2,
         })

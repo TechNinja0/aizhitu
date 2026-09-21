@@ -1,3 +1,4 @@
+import { collaborationPresentation } from "./collaboration-policy";
 import { useCollaboration } from "./Collaboration";
 import { startNewDocument } from "./NewDocument";
 import {
@@ -13,7 +14,7 @@ import "./shared.css";
 import { TemplatePicker } from "./TemplatePicker";
 import { resolveTemplateXml } from "./template-library";
 
-import { uuid, copyText } from "./uuid";
+import { copyText } from "./uuid";
 export type Actor = {
   id: string;
   name: string;
@@ -26,7 +27,6 @@ export const workspaceContext: {
   shareOrigin?: string;
   actor?: Actor;
   documentId?: string;
-  lockToken?: string;
   collaborationToken?: string;
 } = { token: "" };
 export const documentId = () =>
@@ -39,9 +39,6 @@ export function workspaceHeaders() {
       : {}),
     ...(workspaceContext.collaborationToken
       ? { "X-Collaboration-Token": workspaceContext.collaborationToken }
-      : {}),
-    ...(workspaceContext.lockToken
-      ? { "X-Lock-Token": workspaceContext.lockToken }
       : {}),
   };
 }
@@ -444,7 +441,6 @@ function Library({
                         name: f.name,
                         xml: await f.text(),
                       });
-                      sessionStorage.setItem(`zhitu-edit:${d.id}`, "1");
                       location.assign("/documents/" + d.id);
                     });
                 }}
@@ -567,7 +563,9 @@ function Library({
                     ? `${d.lock.name} 正在编辑`
                     : d.collaborators?.length
                       ? `${d.collaborators.length} 个页面协同编辑`
-                      : "可编辑"}
+                      : d.canEdit
+                        ? "可编辑"
+                        : "仅查看"}
               </span>
               <div className="shared-row-actions">
                 {trash ? (
@@ -625,7 +623,7 @@ function Library({
                         aria-label="移入回收站"
                         title={
                           d.lock || d.collaborators?.length
-                            ? "正在编辑，请先结束编辑"
+                            ? "正在编辑，请先返回文件库"
                             : "移入回收站"
                         }
                         disabled={busy || !!d.lock || !!d.collaborators?.length}
@@ -760,6 +758,7 @@ function ShareDialog({
   trigger,
   onCopy,
   onClose,
+  onSaved,
 }: {
   id: string;
   link: string;
@@ -768,17 +767,28 @@ function ShareDialog({
   trigger: React.RefObject<HTMLButtonElement | null>;
   onCopy: () => void;
   onClose: () => void;
+  onSaved?: (settings: any) => void;
 }) {
   const [settings, setSettings] = useState<any>();
   const [members, setMembers] = useState<Actor[]>([]);
   const [visibility, setVisibility] = useState("private");
   const [recipients, setRecipients] = useState<string[]>([]);
+  const [role, setRole] = useState("view");
+  const [recipientRoles, setRecipientRoles] = useState<Record<string, string>>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
   const dirty =
     settings &&
     (visibility !== settings.visibility ||
+      (visibility === "everyone" && role !== settings.role) ||
+      (visibility === "selected" &&
+        recipients.some(
+          (id) =>
+            (recipientRoles[id] || "view") !== settings.recipientRoles[id],
+        )) ||
       JSON.stringify([...recipients].sort()) !==
         JSON.stringify([...settings.recipients].sort()));
   useEffect(() => {
@@ -790,6 +800,8 @@ function ShareDialog({
         if (stopped) return;
         setSettings(result);
         setVisibility(result.visibility);
+        setRole(result.role);
+        setRecipientRoles(result.recipientRoles);
         setRecipients(result.recipients);
         setMembers(roster);
       } catch (e) {
@@ -810,12 +822,21 @@ function ShareDialog({
         {
           visibility,
           recipients: visibility === "selected" ? recipients : [],
+          role,
+          recipientRoles:
+            visibility === "selected"
+              ? Object.fromEntries(
+                  recipients.map((id) => [id, recipientRoles[id] || "view"]),
+                )
+              : {},
           accessRevision: settings.accessRevision,
         },
         "PUT",
       );
       setSettings(result);
       setRecipients(result.recipients);
+      setRecipientRoles(result.recipientRoles);
+      onSaved?.(result);
       setSavedMessage(
         result.visibility === "private"
           ? "已收回分享，仅自己和本机管理员可见"
@@ -849,7 +870,9 @@ function ShareDialog({
         <h2>分享图稿</h2>
         <button onClick={onClose}>关闭</button>
       </div>
-      <p>只有已授权成员才能通过链接访问。已授权成员可查看并申请编辑权。</p>
+      <p>
+        分享链接默认以查看方式打开；“可编辑”成员可主动切换到编辑态，“仅查看”成员不能修改。
+      </p>
       {!settings && !error && <p role="status">正在加载分享权限…</p>}
       {error && <p role="alert">{error}</p>}
       {settings?.canManage ? (
@@ -876,6 +899,29 @@ function ShareDialog({
               </label>
             ))}
           </fieldset>
+          {visibility === "everyone" && (
+            <fieldset disabled={saving} className="shared-sharing-scope">
+              <legend>成员权限</legend>
+              {[
+                ["view", "仅查看"],
+                ["edit", "可编辑"],
+              ].map(([value, label]) => (
+                <label key={value}>
+                  <input
+                    type="radio"
+                    name="share-role"
+                    value={value}
+                    checked={role === value}
+                    onChange={() => {
+                      setRole(value);
+                      setSavedMessage("");
+                    }}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
           {visibility === "selected" && (
             <fieldset className="shared-sharing-members" disabled={saving}>
               <legend>选择成员</legend>
@@ -885,27 +931,44 @@ function ShareDialog({
               {members
                 .filter((m) => m.id !== settings.owner)
                 .map((m) => (
-                  <label key={m.id}>
-                    <input
-                      type="checkbox"
-                      checked={recipients.includes(m.id)}
+                  <div key={m.id} className="shared-member-permission">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={recipients.includes(m.id)}
+                        onChange={(e) => {
+                          setRecipients((prev) =>
+                            e.target.checked
+                              ? [...prev, m.id]
+                              : prev.filter((v) => v !== m.id),
+                          );
+                          setSavedMessage("");
+                        }}
+                      />{" "}
+                      <span>
+                        {m.name}{" "}
+                        <small>
+                          {m.login ? `登录名 ${m.login} · ` : "待补设账号 · "}
+                          身份 {m.id}
+                        </small>
+                      </span>
+                    </label>
+                    <select
+                      aria-label={`成员权限：${m.login || m.id}`}
+                      disabled={!recipients.includes(m.id)}
+                      value={recipientRoles[m.id] || "view"}
                       onChange={(e) => {
-                        setRecipients((prev) =>
-                          e.target.checked
-                            ? [...prev, m.id]
-                            : prev.filter((v) => v !== m.id),
-                        );
+                        setRecipientRoles((old) => ({
+                          ...old,
+                          [m.id]: e.target.value,
+                        }));
                         setSavedMessage("");
                       }}
-                    />{" "}
-                    <span>
-                      {m.name}{" "}
-                      <small>
-                        {m.login ? `登录名 ${m.login} · ` : "待补设账号 · "}身份{" "}
-                        {m.id}
-                      </small>
-                    </span>
-                  </label>
+                    >
+                      <option value="view">仅查看</option>
+                      <option value="edit">可编辑</option>
+                    </select>
+                  </div>
                 ))}
               {recipients
                 .filter((r) => !members.some((m) => m.id === r))
@@ -974,24 +1037,25 @@ function ShareDialog({
   );
 }
 export function useSharedDocument(options: Options) {
-  const id = documentId(),
-    opts = useRef(options);
-  opts.current = options;
+  const id = documentId();
   const collaboration = useCollaboration(id, options);
-  const [doc, setDoc] = useState<any>(),
-    [editing, setEditing] = useState(false),
-    [denied, setDenied] = useState(false),
-    [notice, setNotice] = useState("正在加载共享文档…"),
-    [versions, setVersions] = useState<any[] | null>(null),
-    [sharing, setSharing] = useState(false),
-    [copying, setCopying] = useState(false),
-    [shareMessage, setShareMessage] = useState(""),
-    [busy, setBusy] = useState(false);
+  const doc = collaboration.document;
+  const [versions, setVersions] = useState<any[] | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
+  const shareButton = useRef<HTMLButtonElement>(null);
   const shareLink =
     (workspaceContext.shareOrigin || location.origin) + location.pathname;
+  const run = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+    } catch (e) {
+      options.onError(e);
+    }
+  };
   const copyShareLink = async () => {
     setCopying(true);
-    setShareMessage("正在复制链接…");
     try {
       await copyText(shareLink);
       setShareMessage("链接已复制，可以发送给同事");
@@ -1001,412 +1065,144 @@ export function useSharedDocument(options: Options) {
       setCopying(false);
     }
   };
-  const pollFinished = useRef<Promise<void>>(Promise.resolve());
-  const shareButton = useRef<HTMLButtonElement>(null);
-  const current = useRef<any>(undefined),
-    lease = useRef<any>(undefined),
-    saving = useRef(false),
-    initialized = useRef(false),
-    client = useRef(uuid()),
-    operation = useRef(false),
-    mounted = useRef(true);
-  const keep = (d: any) => {
-    current.current = d;
-    setDoc(d);
-  };
-  const readonly = async () => {
-    lease.current = undefined;
-    workspaceContext.lockToken = undefined;
-    setEditing(false);
-    await opts.current.bridge.invoke("setReadOnly", { value: true });
-    const snapshot = await opts.current.bridge.invoke("snapshot");
-    if (snapshot.revision !== opts.current.savedRevision.current) {
-      opts.current.state.current.dirty = true;
-      opts.current.setDirty(true);
-    }
-  };
-  const adopt = async (d: any) => {
-    await opts.current.load(d.xml, d.name);
-    keep(d);
-  };
-  const save = async () => {
-    if (!id || !lease.current || saving.current || !current.current)
-      return false;
-    saving.current = true;
-    try {
-      const snapshot = await opts.current.bridge.invoke("snapshot"),
-        name = opts.current.state.current.name,
-        lockToken = lease.current.token;
-      const d = await workspaceApi(
-        `documents/${id}`,
-        {
-          xml: snapshot.xml,
-          name,
-          revision: current.current.revision,
-          lockToken,
-        },
-        "PUT",
-      );
-      keep(d);
-      opts.current.savedRevision.current = snapshot.revision;
-      const latest = await opts.current.bridge.invoke("snapshot");
-      const clean =
-        latest.revision === snapshot.revision &&
-        name === opts.current.state.current.name;
-      opts.current.setDirty(!clean);
-      opts.current.state.current.dirty = !clean;
-      setNotice(`已保存到服务器 · 版本 ${d.revision}`);
-      return clean;
-    } catch (e) {
-      if ([403, 404].includes((e as any).status)) {
-        lease.current = undefined;
-        workspaceContext.lockToken = undefined;
-        opts.current.state.current.dirty = false;
-        opts.current.setDirty(false);
-        setDenied(true);
-        return false;
-      }
-      if (
-        !(e as any).status ||
-        [401, 403, 404, 409, 423].includes((e as any).status)
+  const canManage =
+    workspaceContext.actor?.admin || workspaceContext.actor?.id === doc?.owner;
+  const presentation = doc
+    ? collaborationPresentation(
+        doc,
+        collaboration.members,
+        workspaceContext.actor?.id,
+        collaboration.viewing,
       )
-        await readonly();
-      setNotice(
-        (e as Error).message + "；当前修改已保留，可下载副本或重新获取编辑权。",
-      );
-      return false;
-    } finally {
-      saving.current = false;
-    }
-  };
-  useEffect(() => {
-    if (!id || !options.ready || denied || collaboration.active) return;
-    mounted.current = true;
-    workspaceContext.documentId = id;
-    let stopped = false,
-      polling = false;
-    const poll = async () => {
-      if (polling || operation.current || saving.current) return;
-      polling = true;
-      let complete!: () => void;
-      pollFinished.current = new Promise<void>((resolve) => {
-        complete = resolve;
-      });
-      try {
-        if (lease.current) {
-          const requestedAt = Date.now();
-          const r = await workspaceApi(`documents/${id}/heartbeat`, {
-            lockToken: lease.current.token,
-          });
-          if (lease.current) lease.current.expires = requestedAt + r.leaseMs;
-        }
-        const d = await workspaceApi(`documents/${id}/state`);
-        if (stopped) return;
-        if (
-          !initialized.current ||
-          (current.current?.revision !== d.revision &&
-            !opts.current.state.current.dirty &&
-            !lease.current)
-        ) {
-          await opts.current.bridge.invoke("setReadOnly", { value: true });
-          await adopt(await workspaceApi(`documents/${id}`));
-          const firstOpen = !initialized.current;
-          initialized.current = true;
-          setNotice(`已同步服务器版本 ${d.revision} · 只读`);
-          if (
-            firstOpen &&
-            sessionStorage.getItem(`zhitu-edit:${id}`) === "1" &&
-            d.owner === workspaceContext.actor?.id &&
-            !d.lock
-          ) {
-            const requestedAt = Date.now();
-            const l = await workspaceApi(`documents/${id}/lock`, {
-              client: client.current,
-            });
-            lease.current = { ...l, expires: requestedAt + l.leaseMs };
-            workspaceContext.lockToken = l.token;
-            await opts.current.bridge.invoke("setReadOnly", { value: false });
-            setEditing(true);
-            sessionStorage.removeItem(`zhitu-edit:${id}`);
-            setNotice("你正在编辑 · 修改每 2 秒自动保存到服务器");
-          }
-        } else {
-          const access = {
-            lock: d.lock,
-            collaborators: d.collaborators,
-            visibility: d.visibility,
-            accessRevision: d.accessRevision,
-          };
-          current.current = { ...current.current, ...access };
-          setDoc((old: any) => ({ ...old, ...access }));
-        }
-        if (
-          lease.current &&
-          opts.current.state.current.dirty &&
-          !(await opts.current.bridge.invoke("editing")).editing
-        )
-          await save();
-      } catch (e) {
-        if (!stopped) {
-          if ((e as any).status === 404 || (e as any).status === 403) {
-            lease.current = undefined;
-            workspaceContext.lockToken = undefined;
-            opts.current.state.current.dirty = false;
-            opts.current.setDirty(false);
-            setDenied(true);
-            setSharing(false);
-            stopped = true;
-            return;
-          }
-          await readonly().catch(() => {});
-          setNotice((e as Error).message + "；画布已暂停编辑，本地内容保留。");
-        }
-      } finally {
-        polling = false;
-        complete();
-      }
-    };
-    void poll();
-    const timer = setInterval(poll, 2000);
-    const release = () => {
-      if (lease.current)
-        void fetch(`/api/documents/${id}/release`, {
-          method: "POST",
-          keepalive: true,
-          headers: {
-            ...workspaceHeaders(),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ lockToken: lease.current.token }),
-        }).catch(() => {});
-    };
-    const expiry = setInterval(() => {
-      if (lease.current && Date.now() >= lease.current.expires) {
-        void readonly().catch(() => {});
-        setNotice("编辑锁已到期，修改保留在当前页面，请重新获取编辑权。");
-      }
-    }, 500);
-    window.addEventListener("pagehide", release);
-    return () => {
-      stopped = true;
-      mounted.current = false;
-      clearInterval(timer);
-      clearInterval(expiry);
-      window.removeEventListener("pagehide", release);
-      release();
-      workspaceContext.documentId = undefined;
-      workspaceContext.lockToken = undefined;
-    };
-  }, [id, options.ready, denied, collaboration.active]);
-  const run = async (fn: () => Promise<void>, propagateError = false) => {
-    if (operation.current) {
-      if (propagateError) throw Error("正在处理其他操作，请稍后重试");
-      return;
-    }
-    operation.current = true;
-    setBusy(true);
-    try {
-      await pollFinished.current;
-      await fn();
-    } catch (e) {
-      if (propagateError) throw e;
-      options.onError(e);
-    } finally {
-      operation.current = false;
-      setBusy(false);
-    }
-  };
-  const acquire = (propagateError = false) =>
-    run(async () => {
-      const requestedAt = Date.now();
-      const l = await workspaceApi(`documents/${id}/lock`, {
-        client: client.current,
-      });
-      try {
-        const d = await workspaceApi(`documents/${id}`);
-        if (
-          opts.current.state.current.dirty &&
-          d.revision !== current.current?.revision
-        )
-          throw Error(
-            "服务器已有新版本。请先下载当前副本，再加载最新版本；当前修改未覆盖。",
-          );
-        if (!opts.current.state.current.dirty) await adopt(d);
-        lease.current = { ...l, expires: requestedAt + l.leaseMs };
-        workspaceContext.lockToken = l.token;
-        await options.bridge.invoke("setReadOnly", { value: false });
-        setEditing(true);
-        setNotice("你正在编辑 · 修改每 2 秒自动保存到服务器");
-      } catch (e) {
-        await workspaceApi(`documents/${id}/release`, {
-          lockToken: l.token,
-        }).catch(() => {});
-        throw e;
-      }
-    }, propagateError);
-  const release = () =>
-    run(async () => {
-      if (saving.current) throw Error("正在保存，请稍后结束编辑");
-      if (!(await save())) return;
-      await workspaceApi(`documents/${id}/release`, {
-        lockToken: lease.current?.token,
-      });
-      await readonly();
-      setNotice("已结束编辑，其他人可以获取编辑权");
-    });
-  const reload = () =>
-    run(async () => {
-      if (
-        opts.current.state.current.dirty &&
-        !confirm(
-          "加载服务器最新版本会放弃当前未同步的修改。请先用“下载副本”下载备份。确定继续？",
-        )
-      )
-        return;
-      if (lease.current)
-        await workspaceApi(`documents/${id}/release`, {
-          lockToken: lease.current.token,
-        }).catch(() => {});
-      await readonly();
-      await adopt(await workspaceApi(`documents/${id}`));
-      initialized.current = true;
-      setNotice("已加载最新版本 · 只读");
-    });
+    : null;
   const panel = id ? (
     <>
-      {collaboration.panel}
-      {!collaboration.active && (
-        <div className="shared-document-bar">
-          <a
-            href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                if (saving.current) throw Error("正在保存，请稍后返回文件库");
-                if (lease.current) {
-                  if (!(await save())) return;
-                  await workspaceApi(`documents/${id}/release`, {
-                    lockToken: lease.current.token,
-                  });
-                  lease.current = undefined;
-                  workspaceContext.lockToken = undefined;
-                } else if (
-                  opts.current.state.current.dirty &&
-                  !confirm("当前有未同步修改，建议先下载副本。仍返回文件库？")
-                )
-                  return;
-                location.assign("/");
-              });
-            }}
-          >
-            ← 文件库
-          </a>
-          <strong>{workspaceContext.actor?.name}</strong>
-          <span className={editing ? "shared-editing" : "shared-readonly"}>
-            {editing
-              ? "你正在编辑"
-              : doc?.lock
-                ? `${doc.lock.name} 正在编辑 · 你只读`
-                : doc?.collaborators?.length
-                  ? `${doc.collaborators.length} 个页面协同 · 你只读`
-                  : "只读"}
+      <div className="shared-document-bar">
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            void collaboration.back();
+          }}
+        >
+          ← 文件库
+        </a>
+        {presentation && (
+          <span aria-label="图稿分享范围" title={presentation.scopeTitle}>
+            {presentation.scope}
           </span>
-          <span className="shared-notice" role="status">
-            {notice}
-          </span>
-          <button
-            disabled={!doc}
-            ref={shareButton}
-            onClick={() => {
-              setSharing(true);
-              setShareMessage("");
-            }}
-          >
-            分享链接
-          </button>
-          <button
-            disabled={!doc || busy}
-            onClick={() =>
-              void run(async () => {
-                if (lease.current) {
-                  if (!(await save())) return;
-                  await workspaceApi(`documents/${id}/release`, {
-                    lockToken: lease.current.token,
-                  });
-                  await readonly();
-                } else if (opts.current.state.current.dirty)
-                  throw Error(
-                    "请先保存当前修改或下载副本后加载最新版本，再加入协同",
-                  );
-                initialized.current = false;
-                await collaboration.start();
-              })
+        )}
+        {(collaboration.paused ||
+          !collaboration.active ||
+          collaboration.viewing ||
+          presentation?.mode) && (
+          <span
+            aria-label="当前编辑状态"
+            title={`当前账号：${workspaceContext.actor?.name || ""}`}
+            className={
+              collaboration.editable ? "shared-editing" : "shared-readonly"
             }
           >
-            加入多人协同
-          </button>
-          {editing ? (
-            <button disabled={busy} onClick={() => void release()}>
-              结束编辑
-            </button>
-          ) : (
-            <button
-              className="primary"
-              disabled={!doc || busy}
-              onClick={() => void acquire()}
+            {collaboration.paused
+              ? "同步已暂停"
+              : collaboration.active
+                ? presentation?.mode
+                : "正在连接文档"}
+          </span>
+        )}
+        {collaboration.active &&
+          !collaboration.paused &&
+          presentation?.membersText && (
+            <span
+              className="collaboration-members"
+              aria-label="在线协同成员"
+              title={presentation.membersTitle}
             >
-              获取编辑权
-            </button>
+              {presentation.membersText}
+            </span>
           )}
-          <button disabled={busy} onClick={() => void reload()}>
-            加载最新版本
-          </button>
+        <span
+          className="shared-notice"
+          role="status"
+          title={collaboration.noticeTitle}
+        >
+          {collaboration.notice}
+        </span>
+        {doc?.canEdit && (
           <button
-            onClick={() =>
-              void run(async () =>
-                setVersions(await workspaceApi(`documents/${id}/versions`)),
-              )
+            aria-label="编辑"
+            aria-pressed={
+              collaboration.active &&
+              !collaboration.viewing &&
+              !collaboration.paused
             }
-          >
-            服务器版本
-          </button>
-          <button
+            className="editing-toggle"
             disabled={
-              !editing ||
-              busy ||
-              (!workspaceContext.actor?.admin &&
-                workspaceContext.actor?.id !== doc?.owner)
+              !collaboration.active ||
+              collaboration.paused ||
+              collaboration.busy
             }
-            onClick={() =>
-              void run(async () => {
-                if (!confirm("将这份图稿移入回收站？之后可在文件库恢复。"))
-                  return;
-                if (saving.current) throw Error("正在保存，请稍后删除");
-                if (!(await save())) return;
-                await workspaceApi(`documents/${id}/trash`, {
-                  revision: current.current.revision,
-                  lockToken: lease.current?.token,
-                });
-                await readonly();
-                location.assign("/");
-              })
+            title={
+              collaboration.viewing ? "开始编辑" : "保存修改并切换为仅查看"
             }
+            onClick={() => void collaboration.toggleEditing()}
           >
-            移入回收站
+            编辑
           </button>
-        </div>
-      )}
-      {collaboration.active && (
-        <div className="collaboration-help">
-          <span>
-            不同对象与属性自动合并；同一属性以后提交为准。历史恢复请先让所有人退出协同。
-          </span>
-          <button onClick={() => setSharing(true)}>分享链接</button>
-        </div>
-      )}
+        )}
+        <button
+          ref={shareButton}
+          disabled={!doc || collaboration.busy}
+          onClick={() => {
+            setSharing(true);
+            setShareMessage("");
+          }}
+        >
+          分享链接
+        </button>
+        {(!collaboration.active || collaboration.paused) && (
+          <button
+            disabled={collaboration.busy}
+            onClick={() => void collaboration.reconnect()}
+          >
+            重新连接
+          </button>
+        )}
+        <button
+          disabled={!doc || collaboration.busy}
+          onClick={() =>
+            void run(async () =>
+              setVersions(await workspaceApi(`documents/${id}/versions`)),
+            )
+          }
+        >
+          服务器版本
+        </button>
+        <button
+          disabled={!collaboration.editable || !canManage}
+          onClick={() => {
+            if (
+              !confirm(
+                "将这份图稿移入回收站？之后可在文件库恢复。其他页面仍在编辑时无法删除。",
+              )
+            )
+              return;
+            void collaboration.perform(async (current, token) => {
+              await workspaceApi(`documents/${id}/trash`, {
+                revision: current.revision,
+                collaborationToken: token,
+              });
+              location.assign("/");
+            });
+          }}
+        >
+          移入回收站
+        </button>
+      </div>
       {sharing && (
         <ShareDialog
-          id={id!}
+          id={id}
+          onSaved={collaboration.refreshSharing}
           link={shareLink}
           message={shareMessage}
           copying={copying}
@@ -1424,11 +1220,16 @@ export function useSharedDocument(options: Options) {
           >
             <div className="modal-heading">
               <h2>服务器版本</h2>
-              <button onClick={() => setVersions(null)}>关闭</button>
+              <button
+                disabled={collaboration.busy}
+                onClick={() => setVersions(null)}
+              >
+                关闭
+              </button>
             </div>
             <p>
-              每次保存保留一个版本，最多 50
-              个。恢复会生成新版本，其他只读页面自动更新。
+              仅在内容变化时保存版本，最多保留 50
+              个。恢复会生成新版本；请让其他编辑页面切换为仅查看或返回文件库后再恢复。
             </p>
             {versions.map((v) => (
               <div className="shared-version" key={v.revision}>
@@ -1441,23 +1242,20 @@ export function useSharedDocument(options: Options) {
                   </small>
                 </span>
                 <button
-                  disabled={!editing || busy}
+                  disabled={!collaboration.editable}
                   onClick={() =>
-                    void run(async () => {
-                      if (saving.current) throw Error("正在保存，请稍后恢复");
-                      if (!(await save())) return;
-                      const d = await workspaceApi(
+                    void collaboration.perform(async (current, token) => {
+                      const restored = await workspaceApi(
                         `documents/${id}/versions/${v.revision}/restore`,
                         {
-                          revision: current.current.revision,
-                          lockToken: lease.current?.token,
+                          revision: current.revision,
+                          collaborationToken: token,
                         },
                       );
-                      await adopt(d);
+                      await collaboration.resetBase(restored);
                       setVersions(
                         await workspaceApi(`documents/${id}/versions`),
                       );
-                      setNotice(`已恢复历史内容，当前版本 ${d.revision}`);
                     })
                   }
                 >
@@ -1472,17 +1270,13 @@ export function useSharedDocument(options: Options) {
   ) : null;
   return {
     id,
-    denied,
-    editing: collaboration.active ? !collaboration.paused : editing,
-    acquire: () => (collaboration.active ? Promise.resolve() : acquire(true)),
+    denied: collaboration.denied,
+    editing: collaboration.editable,
+    ensureEditable: collaboration.ensureEditable,
+    beforeNavigate: collaboration.beforeNavigate,
     panel,
-    save: collaboration.active ? collaboration.save : save,
+    save: collaboration.save,
     doc,
-    isDirty: (snapshot: any) =>
-      collaboration.active
-        ? collaboration.isDirty(snapshot)
-        : snapshot.revision !== opts.current.savedRevision.current ||
-          (!!current.current &&
-            current.current.name !== opts.current.state.current.name),
+    isDirty: collaboration.isDirty,
   };
 }

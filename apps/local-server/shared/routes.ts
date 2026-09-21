@@ -129,7 +129,7 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
   app.get(
     "/api/documents/:id/state",
     route((r) => {
-      const { xml, ...state } = store.get(String(r.params.id));
+      const { xml, ...state } = store.describe(String(r.params.id), actor(r));
       return {
         ...state,
         collaborators: store.collaboration.members(String(r.params.id)),
@@ -139,7 +139,7 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
   app.get(
     "/api/documents/:id",
     route((r) => ({
-      ...store.get(String(r.params.id)),
+      ...store.describe(String(r.params.id), actor(r)),
       collaborators: store.collaboration.members(String(r.params.id)),
     })),
   );

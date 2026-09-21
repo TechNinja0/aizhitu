@@ -1,3 +1,4 @@
+import { waitForEditable } from "./account-fixtures.ts";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -22,7 +23,11 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 try {
-  const member = await server.workspace!.accounts.register({login:"sharetest", name:"分享测试", password:"Account-testing-2026-safe"});
+  const member = await server.workspace!.accounts.register({
+    login: "sharetest",
+    name: "分享测试",
+    password: "Account-testing-2026-safe",
+  });
   const doc = server.workspace!.create("分享测试图稿", undefined, member.actor);
   await page.goto(server.publicOrigin);
   await page.getByLabel("登录名", { exact: true }).waitFor();
@@ -32,7 +37,7 @@ try {
   );
   const link = `${server.publicOrigin}/documents/${doc.id}`;
   await page.goto(link);
-  await page.getByText(/已同步服务器版本/).waitFor();
+  await waitForEditable(page);
   assert.equal(await page.evaluate(() => window.isSecureContext), false);
   const share = page.getByRole("button", { name: "分享链接", exact: true });
   await share.click();
@@ -99,7 +104,7 @@ try {
 
   // Local admin links must still point at the LAN address for recipients.
   await page.goto(`${server.origin}/documents/${doc.id}`);
-  await page.getByText(/已同步服务器版本/).waitFor();
+  await page.getByLabel("图稿文件名").waitFor();
   await page.getByRole("button", { name: "分享链接", exact: true }).click();
   assert.equal(await dialog.getByLabel("图稿链接").inputValue(), link);
   assert.deepEqual(errors, []);

@@ -1,3 +1,4 @@
+import { waitForEditable } from "./account-fixtures.ts";
 import { chromium, expect, type Page } from "playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -295,45 +296,23 @@ try {
   ).toBeEnabled();
   await page.getByRole("button", { name: "保存到文件库", exact: true }).click();
   await page.waitForURL(/\/documents\//);
-  await page.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(page);
   await page.getByText("0 个节点 · 0 条连线").waitFor();
   const blankUrl = page.url(),
     documentCreates = createCalls;
   await expect(templateEntry()).toBeVisible();
   const blankShared = validate((await invoke("snapshot")).xml);
-  // Newly saved files enter editing automatically; release before testing the other tab.
-  const finishEditing = page.getByRole("button", {
-    name: "结束编辑",
-    exact: true,
-  });
-  if (await finishEditing.isVisible()) await finishEditing.click();
-  await page.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
   const other = await context.newPage();
   await other.goto(blankUrl);
-  await other.getByText("0 个节点 · 0 条连线").waitFor();
-  const acquireEditing = other.getByRole("button", {
-    name: "获取编辑权",
-    exact: true,
-  });
-  if (await acquireEditing.isVisible()) await acquireEditing.click();
-  await other.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(other);
   await templateEntry().click();
   await fillPicker()
     .getByRole("button", { name: "选择模板：微服务架构", exact: true })
     .click();
   await fillPicker().getByRole("button", { name: "应用到当前草稿" }).click();
-  await expect(fillPicker().getByRole("alert")).toContainText("正在编辑");
-  assert.equal(
-    validate((await invoke("snapshot")).xml).contentHash,
-    blankShared.contentHash,
-  );
-  await other.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await other
-    .getByRole("button", { name: "获取编辑权", exact: true })
-    .waitFor();
-  await other.close();
-  await fillPicker().getByRole("button", { name: "应用到当前草稿" }).click();
   await page.getByText("8 个节点 · 7 条连线").waitFor();
+  await other.getByText("8 个节点 · 7 条连线").waitFor();
+  await other.close();
   assert.equal(page.url(), blankUrl);
   assert.equal(createCalls, documentCreates);
   await expect(page.getByLabel("图稿文件名")).toHaveValue("保留名称的空白草稿");
@@ -341,13 +320,15 @@ try {
     validate((await invoke("snapshot")).xml).metadata!.documentId,
     blankShared.metadata!.documentId,
   );
-  await expect(page.locator(".shared-notice")).toContainText("已保存到服务器", { timeout: 10000 });
+  await expect(page.locator(".shared-notice")).toContainText("已自动保存", {
+    timeout: 10000,
+  });
   await expect(page.locator(".save-state")).toHaveText("服务器图稿");
   await page.reload();
   await page.getByText("8 个节点 · 7 条连线").waitFor();
   assert.equal(page.url(), blankUrl);
   pass(
-    "已保存空白文件自动申请编辑权、锁冲突可重试；应用不创建新文件且刷新后内容保留",
+    "已保存空白文件自动协同；应用模板同步到其他页面，不创建新文件且刷新后内容保留",
   );
 
   await page.getByRole("link", { name: "← 文件库" }).click();

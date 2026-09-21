@@ -1,4 +1,8 @@
-import { registerPage } from "./account-fixtures.ts";
+import {
+  enterEditing,
+  waitForEditable,
+  registerPage,
+} from "./account-fixtures.ts";
 import { chromium, expect, type Page } from "playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -66,6 +70,7 @@ try {
   await dialog
     .getByRole("checkbox", { name: new RegExp(recipient.id) })
     .check();
+  await dialog.locator("select:not(:disabled)").selectOption("edit");
   await expect(
     dialog.getByRole("button", { name: "复制链接", exact: true }),
   ).toBeDisabled();
@@ -84,7 +89,7 @@ try {
   await c.getByRole("heading", { name: "无法访问此图稿" }).waitFor();
   await expect(c.locator("iframe")).toHaveCount(0);
   await b.goto(link);
-  await b.getByText(/已同步服务器版本/).waitFor();
+  await enterEditing(b);
   await b.getByRole("button", { name: "分享链接", exact: true }).click();
   const peerDialog = b.getByRole("dialog", { name: "分享图稿", exact: true });
   await peerDialog
@@ -94,9 +99,12 @@ try {
     .waitFor();
   await expect(peerDialog.getByRole("radio")).toHaveCount(0);
   await peerDialog.getByRole("button", { name: "关闭", exact: true }).click();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  assert.equal(server.workspace!.lock(d.id)?.owner, recipient.id);
+  await enterEditing(b);
+  assert.ok(
+    server
+      .workspace!.collaboration.members(d.id)
+      .some((m) => m.owner === recipient.id),
+  );
   console.log(
     "PASS 默认私有、复制不授权、保存选择才生效、指定身份可见、同名未授权直链拒绝、接收者不能转授权",
   );
@@ -109,11 +117,11 @@ try {
   await dialog
     .getByText("已收回分享，仅自己和本机管理员可见", { exact: true })
     .waitFor();
-  await b.getByRole("heading", { name: "无法访问此图稿" }).waitFor();
-  await expect(b.locator("iframe")).toHaveCount(0);
-  assert.equal(server.workspace!.lock(d.id), undefined);
+  await b.getByText("同步已暂停", { exact: true }).waitFor();
+  await expect(b.getByLabel("图稿文件名")).toBeDisabled();
+  assert.equal(server.workspace!.collaboration.members(d.id).length, 0);
   console.log(
-    "PASS 编辑中收回分享：租约失效、已打开页面移除画布、后续不能继续读写",
+    "PASS 编辑中收回分享：协同会话失效、已打开页面只读保留副本、后续不能继续读写",
   );
 
   await dialog.getByRole("radio", { name: "所有成员", exact: true }).check();

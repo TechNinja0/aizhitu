@@ -31,7 +31,7 @@ export class CollaborationStore {
       )
       .all(id);
     return rows.filter((row) =>
-      this.store.allowed(d, {
+      this.store.canEdit(d, {
         id: String(row.owner),
         name: String(row.name),
         admin: row.owner === "local-admin",
@@ -42,14 +42,22 @@ export class CollaborationStore {
     if (this.members(id).length)
       throw new HttpError(
         423,
-        "有人正在协同编辑，请所有人退出协同后再使用独占编辑或管理文件",
+        "有人正在协同编辑，请所有编辑页面切换为仅查看或返回文件库后再管理文件",
+      );
+  }
+  exclusive(id: string, actor: Actor, token: unknown) {
+    const own = this.require(id, actor, token);
+    if (this.members(id).some((member) => member.client !== own.client))
+      throw new HttpError(
+        423,
+        "其他页面正在协同编辑，请让其他编辑页面切换为仅查看或返回文件库后再恢复历史或删除文件",
       );
   }
   join(id: string, actor: Actor, client: unknown) {
     if (typeof client !== "string" || !/^[\w-]{8,100}$/.test(client))
       throw new HttpError(400, "页面身份无效");
     return this.store.transaction(() => {
-      this.store.access(id, actor);
+      this.store.requireEdit(id, actor);
       if (this.store.lock(id))
         throw new HttpError(423, "文档正在独占编辑，请结束独占编辑后加入协同");
       this.members(id);
@@ -65,11 +73,15 @@ export class CollaborationStore {
       this.store.db
         .prepare("INSERT OR REPLACE INTO collaborators VALUES (?,?,?,?,?,?)")
         .run(id, client, actor.id, actor.name, token, this.now() + 30_000);
-      return { token, document: this.store.get(id), members: this.members(id) };
+      return {
+        token,
+        document: this.store.describe(id, actor),
+        members: this.members(id),
+      };
     });
   }
   require(id: string, actor: Actor, token: unknown) {
-    this.store.access(id, actor);
+    this.store.requireEdit(id, actor);
     if (typeof token !== "string") throw new HttpError(423, "协同会话已失效");
     const row = this.store.db
       .prepare(
@@ -87,7 +99,7 @@ export class CollaborationStore {
           "UPDATE collaborators SET expires=?,name=? WHERE documentId=? AND client=?",
         )
         .run(this.now() + 30_000, actor.name, id, row.client);
-      const document = this.store.get(id);
+      const document = this.store.describe(id, actor);
       return {
         document:
           document.revision === revision
@@ -131,7 +143,11 @@ export class CollaborationStore {
       if (receipt) {
         if (receipt.fingerprint !== fingerprint)
           throw new HttpError(409, "协同请求标识已被其他内容使用");
-        return { document: this.store.get(id), conflicts: [], duplicate: true };
+        return {
+          document: this.store.describe(id, actor),
+          conflicts: [],
+          duplicate: true,
+        };
       }
       const current = this.store.get(id);
       const base = this.store.db
@@ -175,7 +191,7 @@ export class CollaborationStore {
           .run(content, title, actor.name, this.now(), id);
         this.store.record(id, "协同编辑");
       }
-      const document = this.store.get(id);
+      const document = this.store.describe(id, actor);
       this.store.db
         .prepare("INSERT INTO collaboration_receipts VALUES (?,?,?,?,?)")
         .run(id, actor.id, input.requestId, fingerprint, document.revision);

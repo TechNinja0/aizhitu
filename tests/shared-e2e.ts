@@ -1,4 +1,8 @@
-import { registerPage } from "./account-fixtures.ts";
+import {
+  enterEditing,
+  waitForEditable,
+  registerPage,
+} from "./account-fixtures.ts";
 import { chromium, type Page } from "playwright";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -141,6 +145,10 @@ try {
   await permissions
     .getByRole("radio", { name: "所有成员", exact: true })
     .check();
+  await a
+    .getByRole("dialog")
+    .getByRole("radio", { name: "可编辑", exact: true })
+    .check();
   await permissions
     .getByRole("button", { name: "保存分享权限", exact: true })
     .click();
@@ -149,27 +157,31 @@ try {
     .waitFor();
   await permissions.getByRole("button", { name: "关闭", exact: true }).click();
 
-  await a.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
   const url = a.url();
+  const id = url.split("/").pop()!;
+  await waitForEditable(a);
+  const initialRevision = server.workspace!.get(id).revision;
   await open(b, url);
-  await a.screenshot({ path: "artifacts/shared-readonly.png" });
-  await assert.rejects(invoke(b, "action", { name: "delete" }), /只读/);
-  pass("文件新建、导入、独立地址、默认只读与画布命令保护");
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByText("浏览器甲 正在编辑，请稍后重试", { exact: true }).waitFor();
-  await b.getByRole("button", { name: "知道了", exact: true }).click();
+  await enterEditing(b);
   const twin = await aContext.newPage();
   twin.on("dialog", (d) => void d.accept());
   await open(twin, url);
-  await twin.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await twin
-    .getByText("浏览器甲 正在编辑，请稍后重试", { exact: true })
+  await waitForEditable(twin);
+  await a
+    .getByLabel("在线协同成员")
+    .filter({ hasText: "正在编辑" })
     .waitFor();
+  assert.equal(
+    server.workspace!.get(id).revision,
+    initialRevision,
+    "打开但不修改不产生版本",
+  );
+  assert.equal(server.workspace!.lock(id), undefined);
+  await twin.getByRole("link", { name: "← 文件库", exact: true }).click();
   await twin.close();
-  pass("不同浏览器身份和同一身份不同标签页均不能同时取得编辑锁");
+  pass(
+    "新建未修改不保存、导入后自动协同；多账号及同账号多页面同时可编辑，打开不新增版本",
+  );
   await edit(a, "订单服务", "团队订单中心");
   await waitLabel(b, "团队订单中心");
   await a.getByLabel("图稿文件名").fill("团队架构图");
@@ -195,27 +207,36 @@ try {
   // Simulate composition events across another automatic save; text must still
   // reach the title without refocusing it or selecting the locator again.
   await a.keyboard.press("End");
-  await a.getByLabel("图稿文件名").dispatchEvent("compositionstart", { data: "" });
+  await a
+    .getByLabel("图稿文件名")
+    .dispatchEvent("compositionstart", { data: "" });
   await a.keyboard.insertText("·中文");
   await b.waitForFunction(
-    () => (document.querySelector('[aria-label="图稿文件名"]') as HTMLInputElement)
-      ?.value === "团队架构图·中文",
+    () =>
+      (document.querySelector('[aria-label="图稿文件名"]') as HTMLInputElement)
+        ?.value === "团队架构图·中文",
   );
-  assert.equal(await a.getByLabel("图稿文件名").evaluate(
-    (input) => document.activeElement === input,
-  ), true, "模拟中文组词期间的自动保存不抢焦点");
-  await a.getByLabel("图稿文件名").dispatchEvent("compositionend", { data: "中文" });
+  assert.equal(
+    await a
+      .getByLabel("图稿文件名")
+      .evaluate((input) => document.activeElement === input),
+    true,
+    "模拟中文组词期间的自动保存不抢焦点",
+  );
+  await a
+    .getByLabel("图稿文件名")
+    .dispatchEvent("compositionend", { data: "中文" });
   await a.keyboard.insertText("输入");
-  assert.equal(await a.getByLabel("图稿文件名").inputValue(), "团队架构图·中文输入");
+  assert.equal(
+    await a.getByLabel("图稿文件名").inputValue(),
+    "团队架构图·中文输入",
+  );
   pass("标题跨自动保存保留焦点和选区，模拟中文组词后可继续输入");
   await b.reload();
+  await enterEditing(b);
   await b.getByText("9 个节点 · 6 条连线").waitFor();
   await waitLabel(b, "团队订单中心");
   pass("真实节点编辑与重命名自动保存、其他浏览器自动更新、刷新恢复同一文档");
-  await a.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
   await edit(b, "团队订单中心", "乙已保存");
   await waitLabel(a, "乙已保存");
   await b.getByRole("button", { name: "服务器版本", exact: true }).click();
@@ -224,46 +245,83 @@ try {
     .getByRole("button", { name: "恢复此版本", exact: true })
     .last()
     .click();
-  await waitLabel(a, "订单服务");
+  await b.getByText(/其他页面正在协同编辑/).waitFor();
+  await b.getByRole("button", { name: "知道了", exact: true }).click();
+  await waitLabel(a, "乙已保存");
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
-  pass("主动交接编辑权、反向同步、服务器历史版本恢复");
-  await b.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  await aContext.setOffline(true);
-  await edit(a, "订单服务", "甲的离线修改");
-  await a
-    .getByRole("button", { name: "获取编辑权", exact: true })
-    .waitFor({ timeout: 15000 });
-  await b.waitForTimeout(7000);
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  await edit(b, "订单服务", "乙接管后保存");
-  await b.getByText(/已保存到服务器/).waitFor();
-  await aContext.setOffline(false);
-  await a.waitForTimeout(3000);
-  await waitLabel(a, "甲的离线修改");
-  await b.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByText(/服务器已有新版本。请先下载当前副本/).waitFor();
+  await a.getByRole("button", { name: "移入回收站", exact: true }).click();
+  await a.getByText(/其他页面正在协同编辑/).waitFor();
   await a.getByRole("button", { name: "知道了", exact: true }).click();
+  assert.equal(server.workspace!.get(id).deleted, 0);
+  await b.getByRole("link", { name: "← 文件库", exact: true }).click();
+  await b.getByRole("heading", { name: "文件库", exact: true }).waitFor();
+  await a.getByRole("button", { name: "服务器版本", exact: true }).click();
+  const history = a.getByRole("dialog", { name: "服务器版本" });
+  await history
+    .getByRole("button", { name: "恢复此版本", exact: true })
+    .last()
+    .click();
+  await waitLabel(a, "订单服务");
+  await history.getByRole("button", { name: "关闭", exact: true }).click();
+  assert.equal(await a.getByLabel("图稿文件名").isEnabled(), true);
+  await invoke(a, "action", { name: "undo" });
+  await waitLabel(a, "订单服务");
+  pass(
+    "其他页面在线时服务器拒绝恢复和删除；只剩当前页面时可恢复历史并清空旧撤销记录",
+  );
+
+  // A failed final synchronization must never navigate away from local edits.
+  await a.route("**/collaboration/sync", (route) => route.abort());
+  await edit(a, "订单服务", "返回前的修改");
+  await a.getByRole("link", { name: "← 文件库", exact: true }).click();
+  await a.getByText(/连接中断/).waitFor();
+  assert.equal(a.url(), url);
+  await waitLabel(a, "返回前的修改");
   const download = a.waitForEvent("download");
   await a.getByRole("button", { name: "下载副本", exact: true }).click();
   await (await download).saveAs("artifacts/shared-offline-recovery.drawio");
   assert.match(
     await fs.readFile("artifacts/shared-offline-recovery.drawio", "utf8"),
-    /甲的离线修改/,
+    /返回前的修改/,
   );
-  await a.getByRole("button", { name: "加载最新版本", exact: true }).click();
-  await waitLabel(a, "乙接管后保存");
-  pass("断线自动只读、锁超时接管、离线修改保留、拒绝旧版本覆盖、下载恢复副本");
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await a.unroute("**/collaboration/sync");
+  let accepted = false,
+    release = false;
+  await a.route("**/collaboration/sync", async (route) => {
+    const response = await route.fetch();
+    accepted = true;
+    const deadline = Date.now() + 15000;
+    while (!release && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 30));
+    await route.fulfill({ response });
+  });
+  await a.getByRole("link", { name: "← 文件库", exact: true }).click();
+  const deadline = Date.now() + 10000;
+  while (!accepted && Date.now() < deadline)
+    await new Promise((r) => setTimeout(r, 30));
+  assert.ok(accepted);
+  assert.equal(a.url(), url, "同步响应在途时等待确认");
+  assert.equal(await a.getByLabel("图稿文件名").isDisabled(), true);
+  release = true;
+  await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();
+  await a.unroute("**/collaboration/sync");
+  assert.match(server.workspace!.get(id).xml, /返回前的修改/);
+  pass("返回前冻结并等待最后同步；失败保留页面和可下载副本，重试成功后才离开");
+  let joinCalls = 0;
+  await a.route("**/collaboration/join", async (route) => {
+    if (++joinCalls === 1) await route.abort();
+    else await route.continue();
+  });
+  await a.goto(url);
+  await a.getByText(/正在自动重试连接/).waitFor();
+  assert.equal(await a.getByLabel("图稿文件名").isDisabled(), true);
+  await waitForEditable(a);
+  assert.ok(joinCalls >= 2);
+  await a.unroute("**/collaboration/join");
+  pass("首次连接失败保持只读并自动重试，成功后自动可编辑");
+
   await a.getByRole("button", { name: "移入回收站", exact: true }).click();
   await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();
-  await b.getByRole("heading", { name: "无法访问此图稿" }).waitFor();
   await a.getByRole("button", { name: "回收站", exact: true }).click();
   await a.getByRole("button", { name: "恢复文件", exact: true }).click();
   await a.getByRole("button", { name: "全部文件", exact: true }).click();
@@ -273,37 +331,33 @@ try {
     .waitFor();
   await a.screenshot({ path: "artifacts/shared-library.png", fullPage: true });
   await open(b, url);
-  await waitLabel(b, "乙接管后保存");
-  pass("创建者删除、其他页面收到删除状态、回收站恢复后继续访问");
+  await enterEditing(b);
+  await waitLabel(b, "返回前的修改");
+  pass("单人在线时创建者删除成功；回收站恢复后授权成员自动协同");
   const pdf = b.waitForEvent("download", { timeout: 40000 });
   await b.getByRole("button", { name: "导出", exact: true }).click();
   await b.getByRole("button", { name: "PDF 单页完整图稿" }).click();
   await b.getByRole("button", { name: "生成 PDF" }).click();
-  await (await pdf).saveAs("artifacts/shared-readonly-export.pdf");
+  await (await pdf).saveAs("artifacts/shared-collaboration-export.pdf");
   assert.ok(
-    (await fs.stat("artifacts/shared-readonly-export.pdf")).size > 1000,
+    (await fs.stat("artifacts/shared-collaboration-export.pdf")).size > 1000,
   );
-  pass("只读成员仍可导出真实 PDF");
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  await frame(b).getByText("乙接管后保存", { exact: true }).dblclick();
+  pass("协同成员可导出真实 PDF");
+  await frame(b).getByText("返回前的修改", { exact: true }).dblclick();
   const typing = frame(b).locator(".mxCellEditor");
   await typing.fill("仍在输入中");
-  await b.waitForTimeout(3000);
-  assert.equal(await typing.isVisible(), true, "自动保存不打断正在输入的文字");
-  await b.getByRole("button", { name: "结束编辑", exact: true }).click();
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
+  await b.waitForTimeout(2200);
+  assert.equal(await typing.isVisible(), true);
+  await b.getByRole("link", { name: "← 文件库", exact: true }).click();
+  await b.getByRole("heading", { name: "文件库", exact: true }).waitFor();
   await open(a, url);
   await waitLabel(a, "仍在输入中");
-  pass("持续文字输入不被自动保存打断，结束编辑提交尚未退出的文字编辑");
-  await b.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await b.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  pass("持续文字输入不被同步打断，返回文件库提交尚未退出的文字编辑");
+  await open(b, url);
+  await enterEditing(b);
   await b.close();
-  await a.waitForTimeout(700);
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  pass("正常关闭标签页即时释放编辑权，另一人可接手");
-  pass("访问者时钟快 5 分钟不影响编辑锁续约和超时判断");
+  await a.getByLabel("在线协同成员").waitFor({ state: "hidden" });
+  pass("正常关闭页面释放协同会话；客户端时钟快 5 分钟不影响服务端会话续约");
   assert.deepEqual(errors, []);
   pass("浏览器无未捕获 JavaScript 异常");
   await fs.writeFile(

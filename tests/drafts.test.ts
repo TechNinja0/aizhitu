@@ -35,9 +35,21 @@ test("文件 API 创建即入库且私有、保存和分享分离、管理员与
     return { status: r.status, data: await r.json() };
   };
   try {
-    const a = (await request("", "auth/register", "POST", {login:"wang-a",password:"Account-testing-2026-safe", name: "王强" })).data,
-      b = (await request("", "auth/register", "POST", {login:"wang-b",password:"Account-testing-2026-safe", name: "王强", admin: true }))
-        .data;
+    const a = (
+        await request("", "auth/register", "POST", {
+          login: "wang-a",
+          password: "Account-testing-2026-safe",
+          name: "王强",
+        })
+      ).data,
+      b = (
+        await request("", "auth/register", "POST", {
+          login: "wang-b",
+          password: "Account-testing-2026-safe",
+          name: "王强",
+          admin: true,
+        })
+      ).data;
     const d = (
       await request(a.token, "documents", "POST", {
         name: "草稿",
@@ -141,6 +153,7 @@ test("文件 API 创建即入库且私有、保存和分享分离、管理员与
     assert.equal((await request(b.token, "documents")).data.length, 0);
     await request(a.token, `documents/${d.id}/sharing`, "PUT", {
       visibility: "everyone",
+      role: "edit",
       recipients: [],
       accessRevision: 1,
     });
@@ -177,12 +190,22 @@ test("列表重命名与批量回收站按权限、编辑锁和版本校验，�
       foreign = store.create("乙的图稿", undefined, b.actor);
     store.share(
       shared.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       a.actor,
     );
     store.share(
       foreign.id,
-      { visibility: "everyone", recipients: [], accessRevision: 1 },
+      {
+        visibility: "everyone",
+        role: "edit",
+        recipients: [],
+        accessRevision: 1,
+      },
       b.actor,
     );
     assert.throws(

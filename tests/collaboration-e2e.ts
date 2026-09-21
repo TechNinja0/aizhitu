@@ -4,7 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { startServer } from "../apps/local-server/server.ts";
-import { registerPage } from "./account-fixtures.ts";
+import { AIService } from "../packages/ai-service/index.ts";
+import {
+  enterEditing,
+  waitForEditable,
+  registerPage,
+} from "./account-fixtures.ts";
 const directory = await fs.mkdtemp(
   path.join(os.tmpdir(), "zhitu-collaboration-browser-"),
 );
@@ -12,11 +17,31 @@ const lanHost =
   Object.values(os.networkInterfaces())
     .flat()
     .find((n) => n?.family === "IPv4" && !n.internal)?.address || "127.0.0.1";
+// Exercise real shared authorization and candidate application without calling a model.
+const ai = await new AIService(directory, async (_file, args, options) => {
+  if (args[0] === "--version") return "test-cli";
+  const xml = options
+    .input!.split("当前完整图稿：\n")[1]
+    .split("\n用户需求：")[0];
+  await fs.writeFile(
+    args[args.indexOf("-o") + 1],
+    xml.replace('value="资料校验"', 'value="AI校验"'),
+  );
+  return "{}";
+}).init();
+await ai.save({
+  defaultProvider: "codex",
+  providers: {
+    codex: { path: process.execPath, model: "" },
+    qoder: { path: process.execPath, model: "" },
+  },
+});
 const server = await startServer({
   port: 0,
   shared: true,
   lanHost,
   dataDirectory: directory,
+  aiService: ai,
 });
 const browser = await chromium.launch({ headless: true, channel: "chromium" });
 const contexts = await Promise.all([
@@ -24,9 +49,18 @@ const contexts = await Promise.all([
   browser.newContext({ viewport: { width: 1600, height: 1000 } }),
 ]);
 const [a, b] = await Promise.all(contexts.map((c) => c.newPage()));
+const legacyRequests: string[] = [];
 const errors: string[] = [],
   checks: string[] = [];
 for (const p of [a, b]) {
+  p.on("request", (r) => {
+    if (
+      /\/api\/documents\/[^/]+\/(lock|heartbeat|release)$/.test(
+        new URL(r.url()).pathname,
+      )
+    )
+      legacyRequests.push(r.url());
+  });
   p.on("pageerror", (e) => errors.push(e.message));
   p.on("dialog", (d) => void d.accept());
 }
@@ -72,8 +106,7 @@ const label = (p: Page, name: string) =>
 const open = async (p: Page, url: string) => {
   await p.goto(url);
   await p.getByText("5 个节点 · 5 条连线").waitFor();
-  await p.getByRole("button", { name: "加入多人协同", exact: true }).click();
-  await p.getByText("多人协同编辑", { exact: true }).waitFor();
+  await enterEditing(p);
 };
 try {
   await fs.mkdir("artifacts", { recursive: true });
@@ -89,14 +122,37 @@ try {
   await api(
     a,
     `documents/${d.id}/sharing`,
-    { visibility: "everyone", recipients: [], accessRevision: 1 },
+    { visibility: "everyone", role: "edit", recipients: [], accessRevision: 1 },
     "PUT",
   );
   const url = server.publicOrigin + "/documents/" + d.id;
   await open(a, url);
   await open(b, url);
-  await a.getByLabel("在线协同成员").filter({ hasText: "协同乙" }).waitFor();
+  await a
+    .getByLabel("在线协同成员")
+    .filter({ hasText: "正在编辑" })
+    .waitFor();
+  assert.match(
+    (await a.getByLabel("在线协同成员").getAttribute("title"))!,
+    /协同乙/,
+  );
   pass("两个独立账号同时加入同一图稿，显示在线成员");
+  await a.getByRole("button", { name: "AI 会话", exact: true }).click();
+  const chat = a.getByRole("complementary", { name: "AI 会话" });
+  await chat.getByLabel("AI 绘图要求").fill("将资料校验改为 AI校验");
+  await chat.getByRole("button", { name: "发送给 AI" }).click();
+  await chat.getByText(/项变化 · 待应用/).waitFor();
+  await chat.getByRole("button", { name: "预览候选", exact: true }).click();
+  await chat.getByAltText("AI 生成候选预览").waitFor();
+  await chat.getByRole("button", { name: "关闭候选预览", exact: true }).click();
+  await chat.getByRole("button", { name: "应用到画布", exact: true }).click();
+  await label(b, "AI校验");
+  await invoke(a, "action", { name: "undo" });
+  await label(b, "资料校验");
+  await a.getByRole("button", { name: "AI 会话", exact: true }).click();
+  pass(
+    "普通成员自动携带协同会话调用 AI，候选应用及本人撤销同步到另一页面（测试 CLI）",
+  );
   // Hold outgoing writes so both edits originate from exactly the same baseline.
   let allow = false;
   for (const p of [a, b])
@@ -236,13 +292,24 @@ try {
     .getByRole("button", { name: "保存分享权限", exact: true })
     .click();
   await sharing.getByRole("button", { name: "关闭", exact: true }).click();
-  await b.getByText("协同已暂停", { exact: true }).waitFor();
+  await b.getByText("同步已暂停", { exact: true }).waitFor();
   await assert.rejects(invoke(b, "action", { name: "delete" }), /只读/);
   pass("所有者收回分享权限后，被撤权端暂停同步且画布只读");
-  await a.getByRole("button", { name: "退出协同", exact: true }).click();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
-  pass("退出协同后可恢复原独占编辑工作流");
+  await a.getByRole("link", { name: "← 文件库", exact: true }).click();
+  await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();
+  await a.goto(url);
+  await waitForEditable(a);
+  await label(a, "乙同时改标签");
+  assert.equal(
+    await a
+      .getByRole("button", {
+        name: /获取编辑权|结束编辑|加入多人协同|退出协同/,
+      })
+      .count(),
+    0,
+  );
+  pass("返回文件库后重新打开自动接入协同，无旧编辑锁按钮");
+  assert.deepEqual(legacyRequests, [], "所有协同操作不再请求旧独占锁接口");
   assert.deepEqual(errors, []);
   pass("浏览器无未捕获 JavaScript 异常");
   await fs.writeFile(

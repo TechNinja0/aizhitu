@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { startServer } from "../apps/local-server/server.ts";
-import { registerPage, testPassword } from "./account-fixtures.ts";
+import { waitForEditable, registerPage, testPassword } from "./account-fixtures.ts";
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "zhitu-accounts-ui-"));
 const lanHost = Object.values(os.networkInterfaces())
   .flat()
@@ -94,19 +94,18 @@ try {
     .getByRole("button", { name: "管理", exact: true })
     .click();
   await a.getByRole("link", { name: "原身份私有稿", exact: true }).click();
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).click();
-  await a.getByRole("button", { name: "结束编辑", exact: true }).waitFor();
+  await waitForEditable(a);
   await admin
     .getByRole("button", { name: "生成一次性设置凭证", exact: true })
     .click();
   await credential.waitFor();
   const reset = await credential.getByLabel("一次性设置凭证").inputValue();
-  assert.equal(server.workspace!.lock(doc.id), undefined);
+  assert.equal(server.workspace!.collaboration.members(doc.id).length, 0);
   await a
     .getByRole("heading", { name: "登录工作区", exact: true })
     .waitFor({ timeout: 20000 });
   await resetForm(a, reset);
-  await a.getByRole("button", { name: "获取编辑权", exact: true }).waitFor();
+  await waitForEditable(a);
   await a.getByRole("link", { name: "← 文件库", exact: true }).click();
   await a.getByRole("link", { name: "账号设置", exact: true }).click();
   const otherLogin = await server.workspace!.accounts.login({
@@ -120,7 +119,7 @@ try {
   await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();
   assert.equal(server.workspace!.actor(otherLogin.token), undefined);
   console.log(
-    "PASS 管理员创建账号、一次性凭证设置密码、重置撤销旧登录与编辑锁、自助改密码撤销其他设备",
+    "PASS 管理员创建账号、一次性凭证设置密码、重置撤销旧登录与协同会话、自助改密码撤销其他设备",
   );
   await admin.getByRole("button", { name: "关闭凭证", exact: true }).click();
   await admin.getByRole("button", { name: "刷新列表", exact: true }).click();

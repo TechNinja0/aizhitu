@@ -102,8 +102,6 @@ export function useNewDocument(options: {
           ...content,
           requestKey: id,
         });
-        if (!returning)
-          sessionStorage.setItem(`zhitu-edit:${document.id}`, "1");
         opts.current.state.current.dirty = false;
         opts.current.setDirty(false);
         sessionStorage.removeItem(keyFor(id));
