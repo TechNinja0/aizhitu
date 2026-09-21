@@ -198,7 +198,6 @@ function App() {
     [selection, setSelection] = useState<string[]>([]),
     [counts, setCounts] = useState({ nodes: 0, edges: 0 });
   const [panel, setPanel] = useState<"review" | "help" | null>(null),
-    [examples, setExamples] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
     [format, setFormat] = useState("png"),
     [scale, setScale] = useState(2),
@@ -290,7 +289,6 @@ function App() {
         review: "待核对的架构图.drawio",
       }[id] || "示例.drawio",
     );
-    setExamples(false);
     setStatus("本地示例 · 编辑后保存为自己的图稿");
   }
   async function guard(action: () => Promise<void>) {
@@ -438,7 +436,7 @@ function App() {
               });
               setStatus("有未保存修改 · 恢复草稿已更新");
             } catch {
-              setStatus("有未保存修改 · 草稿写入失败，请保存副本");
+              setStatus("有未保存修改 · 草稿写入失败，请下载副本");
             }
           }
         }
@@ -657,10 +655,11 @@ function App() {
           </button>
           <button
             disabled={!ready}
+            title="下载当前图稿为 .drawio 文件，不会在文件库新建文件"
             onClick={() => void save().catch(showError)}
           >
             <Icon name="save" />
-            保存副本
+            下载副本
           </button>
           <button disabled={!ready} title="授权保存到本地文件，后续可直接写回；检测磁盘修改冲突" onClick={()=>void saveDirect()}>保存到文件</button>
           <button disabled={!ready || counts.nodes === 0} onClick={() => setSaveTemplateOpen(true)}>保存为模板</button>
@@ -685,28 +684,6 @@ function App() {
           </button>
         </div>
         <span className="divider" />
-        <div className="examples">
-          <button onClick={() => setExamples(!examples)}>
-            本地示例
-            <Icon name="chevron" />
-          </button>
-          {examples && (
-            <div className="dropdown">
-              {[
-                ["architecture", "系统架构"],
-                ["flow", "流程与条件分支"],
-                ["review", "AI 识别核对"],
-              ].map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => void guard(() => openExample(id))}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
           <DocumentTools bridge={bridge} api={api} documentId={meta?.documentId} name={name} ready={editable} onApply={applySnapshot} onError={showError}/>
           <CandidateReview documentName={name} bridge={bridge} api={api} onApply={applySnapshot} onError={showError} disabled={!editable}/>
           <button disabled={!editable} title="当前仅整理连线：消除可安全拉直的多余折点，不移动节点或重排整图；有选区时只处理选区，可一步撤销" onClick={async()=>{
@@ -717,12 +694,13 @@ function App() {
           插入图片
         </button>
         <div className="spacer" />
-        <button onClick={() => sourceInput.current?.click()}>
+        <button title="选择原始截图，与重绘的图稿并排对照检查" onClick={() => sourceInput.current?.click()}>
           <Icon name="image" />
           原图对照
         </button>
         <button
           className={panel === "review" ? "active" : ""}
+          title="检查并确认 AI 标注的识别疑点，数字表示待核对项数"
           onClick={() => {setPanel(panel === "review" ? null : "review");setAiOpen(false);}}
         >
           <Icon name="check" />
@@ -926,7 +904,7 @@ function App() {
                   [
                     "03",
                     "在这里编辑",
-                    "打开 .drawio 文件，核对识别疑点、调整节点与连线，再保存副本。",
+                    "打开 .drawio 文件，核对识别疑点、调整节点与连线，再下载副本。",
                   ],
                 ].map(([n, t, d]) => (
                   <div className="guide-step" key={n}>
@@ -1194,7 +1172,7 @@ function App() {
       )}
       {pending && (
         <Modal title="当前图稿还有未保存修改" onClose={() => setPending(false)}>
-          <p>切换前可以先保存副本，或保留恢复草稿后继续。</p>
+          <p>切换前可以先下载副本，或保留恢复草稿后继续。</p>
           <div className="modal-actions">
             <button onClick={() => setPending(false)}>继续编辑</button>
             <button
@@ -1217,7 +1195,7 @@ function App() {
                   .catch(showError)
               }
             >
-              保存副本后继续
+              下载副本后继续
             </button>
           </div>
         </Modal>
@@ -1242,7 +1220,7 @@ function App() {
                         await load(d.xml, d.name);
                         setDirty(true);
                         savedRevision.current = -1;
-                        setStatus("已恢复草稿 · 请保存副本");
+                        setStatus("已恢复草稿 · 请下载副本");
                       });
                     }}
                   >

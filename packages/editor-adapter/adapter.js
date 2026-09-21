@@ -78,7 +78,9 @@ import { mergeXml, equivalentXml } from "./collaboration.js";
     schedule();
   };
   const snapshot = () => {
-    graph.stopEditing(false);
+    // Even with no active cell editor, stopEditing emits EDITING_STOPPED and
+    // draw.io's typing shim can steal focus from inputs in the parent page.
+    if (graph.isEditing()) graph.stopEditing(false);
     return {
       xml: ui.getFileData(
         true,

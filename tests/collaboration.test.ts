@@ -124,6 +124,16 @@ test("协同持久化、跨连接事务、重发幂等、会话隔离、撤权�
     const status = (n: number) => (e: unknown) =>
       e instanceof HttpError && e.status === n;
     assert.equal(store.collaboration.members(d.id).length, 2);
+    const summary = store
+      .listPage({ actor: a })
+      .items.find((item) => item.id === d.id)!;
+    assert.equal(summary.collaborators.length, 2, "分页列表保留协同占用状态");
+    assert.ok(summary.collaborators.every((member) => !("token" in member)));
+    assert.throws(
+      () =>
+        store.batchTrash({ items: [{ id: d.id, revision: d.revision }] }, a),
+      status(423),
+    );
     assert.throws(
       () => store.collaboration.join(d.id, c, "client-cc"),
       status(404),

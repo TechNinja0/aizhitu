@@ -49,8 +49,8 @@ async function back(p: Page) {
   await p.getByRole("heading", { name: "文件库", exact: true }).waitFor();
 }
 async function create(name: string, template = false) {
-  await a.getByLabel("新图稿名称", { exact: true }).fill(name);
   await a.getByRole("button", { name: "新建图稿", exact: true }).click();
+  await a.getByLabel("新建图稿名称", { exact: true }).fill(name);
   if (template) {
     await a.getByPlaceholder("搜索模板，例如：微服务、审批、ER").fill("MVVM");
     await a

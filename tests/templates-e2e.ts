@@ -135,7 +135,7 @@ try {
     first.contentHash,
   );
   const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "保存副本", exact: true }).click();
+  await page.getByRole("button", { name: "下载副本", exact: true }).click();
   assert.equal(
     validate(await fs.readFile((await (await download).path())!, "utf8"))
       .contentHash,
@@ -341,7 +341,7 @@ try {
     validate((await invoke("snapshot")).xml).metadata!.documentId,
     blankShared.metadata!.documentId,
   );
-  await page.getByRole("button", { name: "保存到服务器", exact: true }).click();
+  await expect(page.locator(".shared-notice")).toContainText("已保存到服务器", { timeout: 10000 });
   await expect(page.locator(".save-state")).toHaveText("服务器图稿");
   await page.reload();
   await page.getByText("8 个节点 · 7 条连线").waitFor();

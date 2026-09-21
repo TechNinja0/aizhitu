@@ -65,7 +65,7 @@ async function edit(p: Page, from: string, to: string) {
   const editor = frame(p).locator(".mxCellEditor");
   await editor.fill(to);
   await editor.press("ControlOrMeta+Enter");
-  await p.getByRole("button", { name: "保存副本", exact: true }).focus();
+  await p.getByRole("button", { name: "下载副本", exact: true }).focus();
 }
 const label = (p: Page, name: string) =>
   frame(p).getByText(name, { exact: true }).waitFor({ timeout: 25000 });

@@ -6,11 +6,15 @@
   font-family: inherit;
 }
 .shared-library {
-  padding: 0 max(32px, calc((100vw - 1250px) / 2)) 36px;
-  overflow: auto;
-  height: 100vh;
+  padding: 0 max(32px, calc((100vw - 1250px) / 2)) 16px;
+  overflow: hidden;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .shared-library header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -58,37 +62,24 @@
 .shared-library header button {
   margin-left: 16px;
 }
-.shared-hero {
-  padding: 40px 0 24px;
+.shared-library-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .shared-kicker {
   font-size: 12px;
   letter-spacing: 2px;
   color: #617c69;
 }
-.shared-hero h1 {
-  font-size: 38px;
-  margin: 10px 0;
-}
-.shared-hero p,
 .shared-login p {
   color: #63756a;
   line-height: 1.8;
-}
-.shared-create {
-  display: flex;
-  align-items: end;
-  gap: 14px;
-  background: #eaf0e8;
-  padding: 22px;
-  border-radius: 12px;
-  margin-bottom: 30px;
-}
-.shared-create label {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
 }
 .shared-library input,
 .shared-login input {
@@ -99,14 +90,11 @@
   font: inherit;
   color: inherit;
 }
-.shared-create input {
-  width: 300px;
-}
-.shared-create a {
-  margin-left: auto;
-  padding: 10px;
+.shared-file-actions a {
+  padding: 8px;
   color: #335f42;
   font-size: 13px;
+  white-space: nowrap;
 }
 .shared-import {
   position: relative;
@@ -126,19 +114,57 @@
   cursor: pointer;
 }
 .shared-files {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 24px;
   background: white;
   border: 1px solid #dbe4dd;
   border-radius: 12px;
   overflow: hidden;
 }
 .shared-files-toolbar {
+  flex-shrink: 0;
   padding: 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.shared-library-filters,
+.shared-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shared-library-filters {
+  flex: 1;
+  flex-wrap: wrap;
+}
+.shared-file-actions {
+  margin-left: auto;
+}
+.shared-library-filters input[aria-label="搜索图稿"] {
+  width: 220px;
+  max-width: 100%;
+  height: 36px;
+  padding: 8px 10px;
+  margin-left: 8px;
+  font-size: 13px;
+}
+.shared-file-actions .shared-import {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 .shared-files-toolbar button {
   border: 0;
+  height: 36px;
+  padding: 0 12px;
 }
 .shared-files-toolbar .active {
   background: #eaf2eb;
@@ -171,6 +197,9 @@
   margin-top: 7px;
 }
 .shared-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: #f9fbf8;
   color: #7a897e;
   padding-top: 12px;
@@ -178,7 +207,8 @@
   font-size: 12px;
 }
 .shared-library footer {
-  padding-top: 25px;
+  flex-shrink: 0;
+  padding-top: 12px;
   font-size: 12px;
   color: #7c8a80;
 }
@@ -219,9 +249,11 @@
 }
 .shared-document-bar {
   display: flex;
+  flex-shrink: 0;
+  min-height: 36px;
   align-items: center;
   gap: 10px;
-  padding: 9px 18px;
+  padding: 4px 18px;
   background: #eef5ef;
   border-bottom: 1px solid #cfdfd2;
   flex-wrap: wrap;
@@ -232,9 +264,11 @@
   text-decoration: none;
   margin-right: 6px;
 }
-.shared-document-bar button {
+.shared-document-bar button,
+.shared-document-bar button.primary {
   font-size: 12px;
-  padding: 5px 9px;
+  line-height: 18px;
+  padding: 3px 8px;
 }
 .shared-notice {
   flex: 1;
@@ -270,7 +304,53 @@
   font-size: 12px;
 }
 .shared-table {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.shared-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 14px;
+  padding: 12px 18px;
+  border-top: 1px solid #e9eeea;
+  color: #63756a;
+  font-size: 12px;
+}
+.shared-pagination > span {
+  margin-right: auto;
+}
+.shared-page-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.shared-page-buttons button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border-color: transparent;
+}
+.shared-page-buttons button[aria-current="page"] {
+  border-color: #91b39a;
+  background: #eaf2eb;
+  color: #24543a;
+}
+.shared-page-gap {
+  padding: 0 4px;
+}
+.shared-pagination select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #cad8ce;
+  border-radius: 6px;
+  background: white;
+  color: inherit;
 }
 .shared-share {
   width: min(560px, calc(100vw - 40px));
@@ -294,9 +374,6 @@
   font: inherit;
 }
 @media (max-width: 900px) {
-  .shared-create {
-    flex-wrap: wrap;
-  }
   .shared-library {
     padding: 0 20px 24px;
   }
@@ -308,9 +385,6 @@
   }
   .shared-brand span {
     display: none;
-  }
-  .shared-create input {
-    width: 220px;
   }
 }
 
@@ -338,6 +412,7 @@
   font-size: 13px;
 }
 .shared-batch {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -345,9 +420,6 @@
   padding: 12px 18px;
   border-top: 1px solid #e9eeea;
   font-size: 12px;
-  color: #63756a;
-}
-.shared-hero small {
   color: #63756a;
 }
 

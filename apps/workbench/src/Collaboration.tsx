@@ -178,7 +178,7 @@ export function useCollaboration(id: string | undefined, options: Options) {
           .invoke("setReadOnly", { value: true })
           .catch(() => {});
         setNotice(
-          `${(e as Error).message}；同步已暂停，当前内容可用“保存副本”下载`,
+          `${(e as Error).message}；同步已暂停，当前内容可用“下载副本”下载`,
         );
       } else {
         s.failures++;
@@ -231,7 +231,7 @@ export function useCollaboration(id: string | undefined, options: Options) {
       if (
         discard &&
         !confirm(
-          "请先用“保存副本”下载备份。确定放弃未同步修改并加载服务器最新版本？",
+          "请先用“下载副本”下载备份。确定放弃未同步修改并加载服务器最新版本？",
         )
       )
         return;
@@ -264,7 +264,7 @@ export function useCollaboration(id: string | undefined, options: Options) {
           if (state.current.paused) {
             if (
               !opts.current.state.current.dirty ||
-              confirm("当前有未同步修改，请先保存副本。仍返回文件库？")
+              confirm("当前有未同步修改，请先下载副本。仍返回文件库？")
             )
               location.assign("/");
             return;

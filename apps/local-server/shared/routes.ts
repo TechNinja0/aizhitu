@@ -37,12 +37,22 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
   app.get(
     "/api/documents",
     route((r) =>
-      store.list(
-        r.query.deleted === "1",
-        actor(r),
-        String(r.query.view || "shared"),
-        r.query.mine === "1",
-      ),
+      r.query.page !== undefined || r.query.pageSize !== undefined
+        ? store.listPage({
+            deleted: r.query.deleted === "1",
+            actor: actor(r),
+            view: String(r.query.view || "shared"),
+            mine: r.query.mine === "1",
+            page: Number(r.query.page ?? 1),
+            pageSize: Number(r.query.pageSize ?? 10),
+            query: String(r.query.q || ""),
+          })
+        : store.list(
+            r.query.deleted === "1",
+            actor(r),
+            String(r.query.view || "shared"),
+            r.query.mine === "1",
+          ),
     ),
   );
   app.post(

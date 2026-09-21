@@ -204,7 +204,17 @@ function Library({
     [view, setView] = useState<"shared" | "trash">("shared"),
     [mine, setMine] = useState(false),
     [query, setQuery] = useState(""),
-    [name, setName] = useState("未命名图稿"),
+    [search, setSearch] = useState(""),
+    [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(() => {
+      try {
+        const saved = Number(localStorage.getItem("zhitu-library-page-size"));
+        return [10, 20, 50, 100].includes(saved) ? saved : 10;
+      } catch {
+        return 10;
+      }
+    }),
+    [total, setTotal] = useState(0),
     [error, setError] = useState(""),
     [loadError, setLoadError] = useState(""),
     [loading, setLoading] = useState(true),
@@ -213,31 +223,70 @@ function Library({
       Record<string, { id: string; revision: number; name: string }>
     >({});
   const trash = view === "trash";
-  const endpoint = `documents?view=${view}&deleted=${trash ? 1 : 0}&mine=${mine ? 1 : 0}`;
-  const reload = async () => setDocs(await workspaceApi(endpoint));
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const pageNumbers = [
+    ...new Set([
+      1,
+      ...Array.from({ length: 5 }, (_, i) => page + i - 2),
+      pages,
+    ]),
+  ]
+    .filter((n) => n >= 1 && n <= pages)
+    .sort((a, b) => a - b);
+  const table = useRef<HTMLDivElement>(null);
+  const endpoint = `documents?view=${view}&deleted=${trash ? 1 : 0}&mine=${mine ? 1 : 0}&page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(search)}`;
+  const latestEndpoint = useRef(endpoint);
+  latestEndpoint.current = endpoint;
+  const requestSequence = useRef(0);
+  const pendingRequests = useRef(0);
+  const reload = async () => {
+    const sequence = ++requestSequence.current;
+    pendingRequests.current++;
+    try {
+      const result = await workspaceApi(endpoint);
+      if (
+        sequence !== requestSequence.current ||
+        latestEndpoint.current !== endpoint
+      )
+        return;
+      setDocs(result.items);
+      setTotal(result.total);
+      setPage(result.page);
+      setLoadError("");
+    } catch (e) {
+      if (
+        sequence === requestSequence.current &&
+        latestEndpoint.current === endpoint
+      )
+        setLoadError((e as Error).message);
+    } finally {
+      pendingRequests.current--;
+      if (
+        sequence === requestSequence.current &&
+        latestEndpoint.current === endpoint
+      )
+        setLoading(false);
+    }
+  };
   useEffect(() => {
-    let active = true;
+    const timer = setTimeout(() => {
+      setSearch(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  useEffect(() => {
     setLoading(true);
     setDocs([]);
     setSelected({});
     setError("");
-    const update = async () => {
-      try {
-        const result = await workspaceApi(endpoint);
-        if (active) {
-          setDocs(result);
-          setLoadError("");
-        }
-      } catch (e) {
-        if (active) setLoadError((e as Error).message);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    void update();
-    const timer = setInterval(update, 3000);
+    if (table.current) table.current.scrollTop = 0;
+    void reload();
+    const timer = setInterval(() => {
+      if (!pendingRequests.current) void reload();
+    }, 3000);
     return () => {
-      active = false;
+      requestSequence.current++;
       clearInterval(timer);
     };
   }, [endpoint]);
@@ -254,9 +303,7 @@ function Library({
     }
   };
   const manageable = (d: any) => actor.admin || actor.id === d.owner;
-  const visible = docs.filter((d) =>
-    d.name.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  const visible = docs;
   const selectable = visible
     .filter((d) => manageable(d) && !d.lock && !d.collaborators?.length)
     .slice(0, 100);
@@ -318,84 +365,18 @@ function Library({
           )}
         </div>
       </header>
-      <section className="shared-hero">
-        <span className="shared-kicker">团队图稿，集中保存</span>
-        <h1>文件库</h1>
-        {!actor.admin && (
-          <small className="shared-identity">
-            我的身份：{actor.name} · {actor.id}
-          </small>
-        )}
-        <p>
-          新建和保存的图稿默认仅自己可见。在分享窗口设置权限后，指定成员或所有成员才可访问。
-        </p>
-        <small>
-          {actor.admin
-            ? "当前为本机管理员，可管理所有文件。"
-            : "你可以管理自己创建的文件；管理员需在服务电脑打开 " +
-              location.protocol +
-              "//127.0.0.1:" +
-              location.port +
-              "/。"}
-        </small>
-      </section>
-      <section className="shared-create">
-        <label>
-          新图稿名称
-          <input
-            aria-label="新图稿名称"
-            maxLength={120}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <button
-          className="primary"
-          disabled={busy}
-          onClick={() => setTemplateOpen(true)}
-        >
-          新建图稿
-        </button>
-        {templateOpen && (
-          <TemplatePicker
-            initialName={name === "未命名图稿" ? "" : name}
-            onClose={() => setTemplateOpen(false)}
-            onCreate={async (template, title) => {
-              startNewDocument(
-                title,
-                await resolveTemplateXml(template, title),
-              );
-            }}
-          />
-        )}
-        <label className="shared-import">
-          导入图稿
-          <input
-            aria-label="导入图稿"
-            type="file"
-            accept=".drawio,.xml"
-            disabled={busy}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f)
-                void run(async () => {
-                  if (f.size > 20 * 1024 * 1024) throw Error("文件超过 20 MiB");
-                  const d = await workspaceApi("documents", {
-                    name: f.name,
-                    xml: await f.text(),
-                  });
-                  sessionStorage.setItem(`zhitu-edit:${d.id}`, "1");
-                  location.assign("/documents/" + d.id);
-                });
-            }}
-          />
-        </label>
-        <a href="/local">本地临时画布</a>
-      </section>
+      <h1 className="shared-library-title">文件库</h1>
+      {templateOpen && (
+        <TemplatePicker
+          onClose={() => setTemplateOpen(false)}
+          onCreate={async (template, title) => {
+            startNewDocument(title, await resolveTemplateXml(template, title));
+          }}
+        />
+      )}
       <section className="shared-files">
         <div className="shared-files-toolbar">
-          <div>
+          <div className="shared-library-filters">
             {(
               [
                 ["shared", "全部文件"],
@@ -406,7 +387,10 @@ function Library({
                 key={key}
                 disabled={busy}
                 className={view === key ? "active" : ""}
-                onClick={() => setView(key)}
+                onClick={() => {
+                  setView(key);
+                  setPage(1);
+                }}
               >
                 {label}
               </button>
@@ -416,26 +400,64 @@ function Library({
                 type="checkbox"
                 checked={mine}
                 disabled={busy}
-                onChange={(e) => setMine(e.target.checked)}
+                onChange={(e) => {
+                  setMine(e.target.checked);
+                  setPage(1);
+                }}
               />
               我拥有的
             </label>
+            <input
+              aria-label="搜索图稿"
+              placeholder="搜索图稿名称"
+              maxLength={120}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelected({});
+              }}
+            />
           </div>
-          <input
-            aria-label="搜索图稿"
-            placeholder="搜索图稿名称"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelected({});
-            }}
-          />
+          <div className="shared-file-actions">
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => setTemplateOpen(true)}
+            >
+              新建图稿
+            </button>
+            <label className="shared-import">
+              导入图稿
+              <input
+                aria-label="导入图稿"
+                type="file"
+                accept=".drawio,.xml"
+                disabled={busy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f)
+                    void run(async () => {
+                      if (f.size > 20 * 1024 * 1024)
+                        throw Error("文件超过 20 MiB");
+                      const d = await workspaceApi("documents", {
+                        name: f.name,
+                        xml: await f.text(),
+                      });
+                      sessionStorage.setItem(`zhitu-edit:${d.id}`, "1");
+                      location.assign("/documents/" + d.id);
+                    });
+                }}
+              />
+            </label>
+            <a href="/local">本地临时画布</a>
+          </div>
         </div>
         <div className="shared-batch">
           <span>
             {loading
               ? "正在加载…"
-              : `共 ${visible.length} 份${query ? `（总计 ${docs.length} 份）` : ""}`}
+              : `共 ${total} 份${search ? "（搜索结果）" : ""}`}
           </span>
           {!trash && (
             <>
@@ -446,18 +468,25 @@ function Library({
               >
                 批量移入回收站
               </button>
-              <small>每次最多 100 份；正在编辑的文件不可操作</small>
+              <small>仅选择本页文件；正在编辑的文件不可操作</small>
             </>
           )}
         </div>
         {(error || loadError) && <p role="alert">{error || loadError}</p>}
-        <div className="shared-table">
+        <div
+          className="shared-table"
+          ref={table}
+          role="region"
+          aria-label="文件列表"
+          tabIndex={0}
+        >
           <div className="shared-row shared-table-head">
             <span>
               {!trash && (
                 <input
                   type="checkbox"
                   aria-label="全选可管理文件"
+                  title="全选本页可管理文件"
                   disabled={busy || !selectable.length}
                   checked={
                     !!selectable.length &&
@@ -634,6 +663,63 @@ function Library({
             </div>
           )}
         </div>
+        <nav className="shared-pagination" aria-label="文件分页">
+          <span>
+            {total
+              ? `第 ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} 条，共 ${total} 条`
+              : "共 0 条"}
+          </span>
+          <div className="shared-page-buttons">
+            <button
+              aria-label="上一页"
+              disabled={busy || loading || page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              ‹
+            </button>
+            {pageNumbers.map((n, i) => (
+              <React.Fragment key={n}>
+                {i > 0 && n - pageNumbers[i - 1] > 1 && (
+                  <span className="shared-page-gap">…</span>
+                )}
+                <button
+                  aria-label={`第 ${n} 页`}
+                  aria-current={page === n ? "page" : undefined}
+                  disabled={busy || loading}
+                  onClick={() => setPage(n)}
+                >
+                  {n}
+                </button>
+              </React.Fragment>
+            ))}
+            <button
+              aria-label="下一页"
+              disabled={busy || loading || page >= pages}
+              onClick={() => setPage(page + 1)}
+            >
+              ›
+            </button>
+          </div>
+          <select
+            aria-label="每页显示数量"
+            value={pageSize}
+            disabled={busy}
+            onChange={(e) => {
+              const size = Number(e.target.value);
+              setPageSize(size);
+              setPage(1);
+              try {
+                localStorage.setItem("zhitu-library-page-size", String(size));
+              } catch {}
+            }}
+          >
+            {[10, 20, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size} 条/页
+              </option>
+            ))}
+          </select>
+        </nav>
       </section>
       {shareLink && (
         <ShareDialog
@@ -1173,7 +1259,7 @@ export function useSharedDocument(options: Options) {
       if (
         opts.current.state.current.dirty &&
         !confirm(
-          "加载服务器最新版本会放弃当前未同步的修改。请先用“保存副本”下载备份。确定继续？",
+          "加载服务器最新版本会放弃当前未同步的修改。请先用“下载副本”下载备份。确定继续？",
         )
       )
         return;
@@ -1260,14 +1346,9 @@ export function useSharedDocument(options: Options) {
             加入多人协同
           </button>
           {editing ? (
-            <>
-              <button disabled={busy} onClick={() => void save()}>
-                保存到服务器
-              </button>
-              <button disabled={busy} onClick={() => void release()}>
-                结束编辑
-              </button>
-            </>
+            <button disabled={busy} onClick={() => void release()}>
+              结束编辑
+            </button>
           ) : (
             <button
               className="primary"
