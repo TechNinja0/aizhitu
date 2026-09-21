@@ -107,7 +107,7 @@ button.quiet {
   overflow: hidden;
 }
 .topbar {
-  height: 72px;
+  height: 48px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -122,13 +122,13 @@ button.quiet {
   gap: 11px;
   color: #263f2f;
   min-width: 165px;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: 2px;
 }
 .brand-mark {
-  width: 35px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 9px 2px 9px 2px;
   background: #31563d;
   color: #faf8ec;
@@ -925,9 +925,12 @@ button.ai-settings-save { flex-shrink: 0; min-width: 132px; min-height: 44px; fo
 .ai-compose-options select {width:auto;max-width:100%;padding:4px 8px;border:0;border-radius:20px;background:#f2f6f3;color:#64766b;font-size:11px;}
 .ai-compose-bottom {display:flex;align-items:center;gap:3px;margin-top:7px;}
 .ai-compose-bottom select {width:auto;max-width:147px;font-size:11px;padding:5px 3px;border:0;background:transparent;color:#465c51;}
-.ai-compose-bottom .ai-attach-button {margin-left:auto;flex:0 0 32px;width:32px;height:32px;padding:5px;display:flex;align-items:center;}
+.ai-compose-bottom .ai-attach-button {margin-left:auto;flex:0 0 32px;width:32px;height:32px;padding:4px;display:flex;align-items:center;justify-content:center;}
+.ai-attach-button svg {flex-shrink:0;width:22px;height:22px;}
 .ai-compose-bottom .ai-send {flex:0 0 32px;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:#316e55;color:#fff;font-size:22px;line-height:32px;}
 .ai-compose-bottom .ai-send:disabled {background:#cbd9d1;}
+.ai-compose-bottom .ai-send.ai-stop {display:grid;place-items:center;background:transparent;color:#316e55;line-height:1;}
+.ai-compose-bottom .ai-send.ai-stop:hover {color:#24543f;}
 .ai-cli-default {color:#86978d;font-size:10px;}
 .ai-compose-hint {display:block;text-align:center;font-size:9px;color:#9aa59f;margin-top:6px;}
 .ai-candidate {border:1px solid #e3eae5;border-radius:12px;background:#fafcfb;padding:12px;}

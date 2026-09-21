@@ -939,18 +939,21 @@ export function AIChat({
             >
               <svg
                 viewBox="0 0 24 24"
-                width="19"
-                height="19"
+                width="22"
+                height="22"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.6"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
               >
-                <path d="M8 12v5a4 4 0 0 0 8 0V6a3 3 0 0 0-6 0v10a1 1 0 0 0 2 0V8" />
+                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.2-9.19" />
               </svg>
             </button>
             {running ? (
               <button
-                className="ai-send"
+                className="ai-send ai-stop"
                 aria-label="取消任务"
                 title="停止生成"
                 onClick={async () => {
@@ -962,7 +965,10 @@ export function AIChat({
                   }
                 }}
               >
-                ■
+                <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+                  <circle cx="13" cy="13" r="13" fill="currentColor" />
+                  <rect x="8" y="8" width="10" height="10" rx="1.5" fill="white" />
+                </svg>
               </button>
             ) : (
               <button

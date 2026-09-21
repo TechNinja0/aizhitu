@@ -292,10 +292,16 @@ test("升级旧文件保留文件库状态，历史草稿跨重启合并到全�
   try {
     const a = store.enter("甲"),
       old = store.create("原有图稿", undefined, a.actor);
-    store.db.exec("ALTER TABLE documents DROP COLUMN draft");
+    // The legacy schema predates both the draft column and pagination indexes.
+    store.db.exec(`DROP INDEX documents_list_order;
+      DROP INDEX documents_owner_order;
+      ALTER TABLE documents DROP COLUMN draft`);
     store.close();
     store = new WorkspaceStore(dir);
     assert.equal(store.get(old.id).draft, 0);
+    const indexes = store.db.prepare("PRAGMA index_list(documents)").all();
+    assert.ok(indexes.some((index) => index.name === "documents_list_order"));
+    assert.ok(indexes.some((index) => index.name === "documents_owner_order"));
     const d = store.create("未发布草稿", undefined, a.actor, true);
     store.close();
     store = new WorkspaceStore(dir);

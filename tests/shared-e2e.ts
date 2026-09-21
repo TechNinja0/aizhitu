@@ -68,7 +68,7 @@ async function edit(p: Page, oldText: string, newText: string) {
   await editor.waitFor();
   await editor.fill(newText);
   await editor.press("ControlOrMeta+Enter");
-  await p.getByRole("button", { name: "保存副本", exact: true }).focus();
+  await p.getByRole("button", { name: "下载副本", exact: true }).focus();
 }
 async function waitLabel(p: Page, label: string) {
   await frame(p).getByText(label, { exact: true }).waitFor({ timeout: 20000 });
@@ -125,8 +125,8 @@ try {
   if (lanHost !== "127.0.0.1")
     assert.equal(await a.evaluate(() => isSecureContext), false);
   pass("局域网 HTTP 访问、固定账号注册与记住登录、非安全上下文兼容");
-  await a.getByLabel("新图稿名称").fill("空白共享图");
   await a.getByRole("button", { name: "新建图稿" }).click();
+  await a.getByLabel("新建图稿名称", { exact: true }).fill("空白共享图");
   await a.getByRole("button", { name: "创建空白画布", exact: true }).click();
   await a.getByText("0 个节点 · 0 条连线").waitFor();
   assert.match(a.url(), /\/new\//);
@@ -173,12 +173,41 @@ try {
   await edit(a, "订单服务", "团队订单中心");
   await waitLabel(b, "团队订单中心");
   await a.getByLabel("图稿文件名").fill("团队架构图");
+  await a.getByLabel("图稿文件名").evaluate((input: HTMLInputElement) => {
+    input.setSelectionRange(2, 4, "backward");
+  });
   await b.getByLabel("图稿文件名").filter({ visible: true }).waitFor();
   await b.waitForFunction(
     () =>
       (document.querySelector('[aria-label="图稿文件名"]') as HTMLInputElement)
         ?.value === "团队架构图",
   );
+  assert.deepEqual(
+    await a.getByLabel("图稿文件名").evaluate((input: HTMLInputElement) => ({
+      focused: document.activeElement === input,
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      direction: input.selectionDirection,
+    })),
+    { focused: true, start: 2, end: 4, direction: "backward" },
+    "标题自动保存后仍保留焦点、选区和选区方向",
+  );
+  // Simulate composition events across another automatic save; text must still
+  // reach the title without refocusing it or selecting the locator again.
+  await a.keyboard.press("End");
+  await a.getByLabel("图稿文件名").dispatchEvent("compositionstart", { data: "" });
+  await a.keyboard.insertText("·中文");
+  await b.waitForFunction(
+    () => (document.querySelector('[aria-label="图稿文件名"]') as HTMLInputElement)
+      ?.value === "团队架构图·中文",
+  );
+  assert.equal(await a.getByLabel("图稿文件名").evaluate(
+    (input) => document.activeElement === input,
+  ), true, "模拟中文组词期间的自动保存不抢焦点");
+  await a.getByLabel("图稿文件名").dispatchEvent("compositionend", { data: "中文" });
+  await a.keyboard.insertText("输入");
+  assert.equal(await a.getByLabel("图稿文件名").inputValue(), "团队架构图·中文输入");
+  pass("标题跨自动保存保留焦点和选区，模拟中文组词后可继续输入");
   await b.reload();
   await b.getByText("9 个节点 · 6 条连线").waitFor();
   await waitLabel(b, "团队订单中心");
@@ -221,7 +250,7 @@ try {
   await a.getByText(/服务器已有新版本。请先下载当前副本/).waitFor();
   await a.getByRole("button", { name: "知道了", exact: true }).click();
   const download = a.waitForEvent("download");
-  await a.getByRole("button", { name: "保存副本", exact: true }).click();
+  await a.getByRole("button", { name: "下载副本", exact: true }).click();
   await (await download).saveAs("artifacts/shared-offline-recovery.drawio");
   assert.match(
     await fs.readFile("artifacts/shared-offline-recovery.drawio", "utf8"),

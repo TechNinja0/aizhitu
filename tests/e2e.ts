@@ -91,7 +91,7 @@ try {
   await editor.waitFor();
   await editor.fill("订单处理服务");
   await editor.press("ControlOrMeta+Enter");
-  await page.getByRole("button", { name: "保存副本", exact: true }).focus();
+  await page.getByRole("button", { name: "下载副本", exact: true }).focus();
   await invoke("snapshot");
   await waitState();
   assert.ok(
@@ -153,7 +153,7 @@ try {
   );
   const latest = (await invoke("snapshot")).xml;
   const saved = page.waitForEvent("download");
-  await page.getByRole("button", { name: "保存副本", exact: true }).click();
+  await page.getByRole("button", { name: "下载副本", exact: true }).click();
   const dl = await saved;
   await dl.saveAs("artifacts/browser-saved.drawio");
   const savedXml = await fs.readFile("artifacts/browser-saved.drawio", "utf8");
@@ -209,7 +209,7 @@ try {
     .getByRole("button", { name: "恢复", exact: true })
     .first()
     .click();
-  await restored.getByText("已恢复草稿 · 请保存副本").waitFor();
+  await restored.getByText("已恢复草稿 · 请下载副本").waitFor();
   assert.match(await restored.locator(".save-state").innerText(), /尚未保存/);
   await restored.close();
   check("another page can explicitly recover a complete draft");

@@ -25,6 +25,19 @@ export type Actor = {
   needsSetup?: boolean;
 };
 export type Visibility = "private" | "selected" | "everyone";
+type DocumentSummary = {
+  id: string;
+  name: string;
+  revision: number;
+  owner: string;
+  createdBy: string;
+  updatedBy: string;
+  updatedAt: number;
+  deleted: number;
+  draft: number;
+  visibility: Visibility;
+  accessRevision: number;
+};
 export type Lease = {
   owner: string;
   name: string;
@@ -95,6 +108,9 @@ export class WorkspaceStore {
         "ALTER TABLE document_creations ADD COLUMN fingerprint TEXT",
       );
     this.accounts = new Accounts(this, this.now);
+    this.db
+      .exec(`CREATE INDEX IF NOT EXISTS documents_list_order ON documents(deleted,draft,updatedAt DESC,id);
+      CREATE INDEX IF NOT EXISTS documents_owner_order ON documents(owner,deleted,draft,updatedAt DESC,id);`);
   }
   username(name: unknown) {
     if (
@@ -139,18 +155,21 @@ export class WorkspaceStore {
       throw new HttpError(409, "文档身份不匹配，请导入为新文档");
     return result.xml!;
   }
-  list(deleted = false, actor?: Actor, view = "shared", mine = false) {
+  private listFilter(
+    deleted: boolean,
+    actor: Actor | undefined,
+    view: string,
+    mine: boolean,
+    query = "",
+  ) {
     const owner = actor?.id || "",
       admin = Number(!!actor?.admin);
-    return this.db
-      .prepare(
-        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
-      FROM documents WHERE deleted=? AND (owner=? OR ? OR
+    return {
+      where: `deleted=? AND (owner=? OR ? OR
         (draft=0 AND (visibility='everyone' OR (visibility='selected' AND EXISTS
           (SELECT 1 FROM document_members WHERE documentId=documents.id AND memberId=?)))))
-      AND (?=1 OR draft=?) AND (?=0 OR owner=?) ORDER BY updatedAt DESC,id`,
-      )
-      .all(
+      AND (?=1 OR draft=?) AND (?=0 OR owner=?) AND instr(lower(name),lower(?))>0`,
+      params: [
         Number(deleted),
         owner,
         admin,
@@ -159,8 +178,77 @@ export class WorkspaceStore {
         Number(view === "drafts"),
         Number(mine),
         owner,
+        query,
+      ],
+    };
+  }
+  list(deleted = false, actor?: Actor, view = "shared", mine = false) {
+    const { where, params } = this.listFilter(deleted, actor, view, mine);
+    return this.db
+      .prepare(
+        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
+      FROM documents WHERE ${where} ORDER BY updatedAt DESC,id`,
       )
-      .map((d) => ({ ...d, lock: this.publicLock(d.id as string) }));
+      .all(...params)
+      .map((d) => ({
+        ...(d as unknown as DocumentSummary),
+        lock: this.publicLock(d.id as string),
+      }));
+  }
+  listPage({
+    deleted = false,
+    actor,
+    view = "shared",
+    mine = false,
+    page = 1,
+    pageSize = 10,
+    query = "",
+  }: {
+    deleted?: boolean;
+    actor: Actor;
+    view?: string;
+    mine?: boolean;
+    page?: number;
+    pageSize?: number;
+    query?: string;
+  }) {
+    if (
+      !Number.isSafeInteger(page) ||
+      page < 1 ||
+      !Number.isSafeInteger(pageSize) ||
+      pageSize < 1 ||
+      pageSize > 100
+    )
+      throw new HttpError(400, "页码必须为正整数，每页数量为 1–100");
+    if (typeof query !== "string" || query.length > 120)
+      throw new HttpError(400, "搜索内容不能超过 120 字");
+    const { where, params } = this.listFilter(
+      deleted,
+      actor,
+      view,
+      mine,
+      query.trim(),
+    );
+    const total = Number(
+      this.db
+        .prepare(`SELECT count(*) AS total FROM documents WHERE ${where}`)
+        .get(...params)!.total,
+    );
+    const currentPage = Math.min(
+      page,
+      Math.max(1, Math.ceil(total / pageSize)),
+    );
+    const items = this.db
+      .prepare(
+        `SELECT id,name,revision,owner,createdBy,updatedBy,updatedAt,deleted,draft,visibility,accessRevision
+      FROM documents WHERE ${where} ORDER BY updatedAt DESC,id LIMIT ? OFFSET ?`,
+      )
+      .all(...params, pageSize, (currentPage - 1) * pageSize)
+      .map((d) => ({
+        ...(d as unknown as DocumentSummary),
+        lock: this.publicLock(d.id as string),
+      }));
+    return { items, total, page: currentPage, pageSize };
   }
   access(id: string, actor: Actor, includeDeleted = false) {
     const d = this.get(id, includeDeleted);
