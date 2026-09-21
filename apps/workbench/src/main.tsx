@@ -242,7 +242,7 @@ function App() {
     pendingAction = useRef<(() => Promise<void>) | null>(null),
     initialised = useRef(false);
   const showError = (e: unknown) => setError((e as Error).message || String(e));
-  const shared = useSharedDocument({ bridge, ready, state, savedRevision, load: (xml, name) => load(xml, name, true), setDirty, setName, onError: showError });
+  const shared = useSharedDocument({ bridge, ready, state, savedRevision, applySnapshot, setStatus, load: (xml, name) => load(xml, name, true), setDirty, setName, onError: showError });
   const pendingDocument = useNewDocument({ bridge, state, load: (xml, title) => load(xml, title, true), setDirty });
   const editable = ready && !pendingDocument.frozen && (!shared.id || shared.editing);
   function applySnapshot(s: any) {

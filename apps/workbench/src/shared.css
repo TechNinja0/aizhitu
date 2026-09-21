@@ -432,3 +432,6 @@
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
 }
+
+.collaboration-bar { border-bottom: 1px solid #c9ded3; }
+.collaboration-help { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 16px; font-size: 12px; background: #f1f7f3; color: #40564a; }

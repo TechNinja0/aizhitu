@@ -259,6 +259,7 @@ export class Accounts {
   private revoke(id: string) {
     this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
     this.db.prepare("DELETE FROM leases WHERE owner=?").run(id);
+    this.db.prepare("DELETE FROM collaborators WHERE owner=?").run(id);
     this.db.prepare("DELETE FROM account_resets WHERE userId=?").run(id);
   }
   private admin(actor: Actor) {

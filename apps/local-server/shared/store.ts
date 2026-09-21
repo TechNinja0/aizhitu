@@ -1,3 +1,4 @@
+import { CollaborationStore } from "./collaboration.ts";
 import { Accounts } from "./accounts.ts";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -36,6 +37,7 @@ const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 export class WorkspaceStore {
   db: DatabaseSync;
   accounts: Accounts;
+  collaboration: CollaborationStore;
   constructor(
     public directory: string,
     public leaseMs = 30_000,
@@ -95,6 +97,7 @@ export class WorkspaceStore {
         "ALTER TABLE document_creations ADD COLUMN fingerprint TEXT",
       );
     this.accounts = new Accounts(this, this.now);
+    this.collaboration = new CollaborationStore(this, this.now);
   }
   username(name: unknown) {
     if (
@@ -119,6 +122,7 @@ export class WorkspaceStore {
   logout(token: string, actor: Actor) {
     this.db.prepare("DELETE FROM sessions WHERE token=?").run(hash(token));
     this.db.prepare("DELETE FROM leases WHERE owner=?").run(actor.id);
+    this.db.prepare("DELETE FROM collaborators WHERE owner=?").run(actor.id);
   }
   name(value: unknown) {
     if (
@@ -160,7 +164,13 @@ export class WorkspaceStore {
         Number(mine),
         owner,
       )
-      .map((d) => ({ ...d, lock: this.publicLock(d.id as string) }));
+      .map((d) => ({
+        ...d,
+        lock: this.publicLock(d.id as string),
+        collaborators: deleted
+          ? []
+          : this.collaboration.members(d.id as string),
+      }));
   }
   access(id: string, actor: Actor, includeDeleted = false) {
     const d = this.get(id, includeDeleted);
@@ -258,6 +268,24 @@ export class WorkspaceStore {
           "UPDATE documents SET visibility=?,accessRevision=accessRevision+1 WHERE id=?",
         )
         .run(visibility, id);
+      for (const member of this.db
+        .prepare(
+          "SELECT owner,client,name FROM collaborators WHERE documentId=?",
+        )
+        .all(id)) {
+        if (
+          !this.allowed(this.get(id), {
+            id: String(member.owner),
+            name: String(member.name),
+            admin: member.owner === "local-admin",
+          })
+        )
+          this.db
+            .prepare(
+              "DELETE FROM collaborators WHERE documentId=? AND client=?",
+            )
+            .run(id, member.client);
+      }
       const lock = this.lock(id);
       if (
         lock &&
@@ -276,6 +304,7 @@ export class WorkspaceStore {
       throw new HttpError(403, "仅文件所有者或管理员可管理文档");
   }
   idle(id: string) {
+    this.collaboration.idle(id);
     const lock = this.lock(id);
     if (lock)
       throw new HttpError(423, `${lock.name} 正在编辑，请先结束编辑再管理文件`);
@@ -457,6 +486,7 @@ export class WorkspaceStore {
       throw new HttpError(400, "页面身份无效");
     return this.transaction(() => {
       this.access(id, actor);
+      this.collaboration.idle(id);
       const existing = this.lock(id);
       if (
         existing &&

@@ -35,27 +35,46 @@ export async function startEngine(
       ),
   );
   app.get("/", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/index.html")),
+    res.sendFile(at("packages/editor-adapter/index.html"), {
+      dotfiles: "allow",
+    }),
   );
   app.get("/js/PreConfig.js", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/PreConfig.js")),
+    res.sendFile(at("packages/editor-adapter/PreConfig.js"), {
+      dotfiles: "allow",
+    }),
   );
   app.get("/js/PostConfig.js", (_req, res) =>
     res.type("js").send("/* no remote plugins */"),
   );
   app.get("/themes.js", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/themes.js")),
+    res.sendFile(at("packages/editor-adapter/themes.js"), {
+      dotfiles: "allow",
+    }),
   );
   app.get("/beautify.js", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/beautify.js")),
+    res.sendFile(at("packages/editor-adapter/beautify.js"), {
+      dotfiles: "allow",
+    }),
+  );
+  app.get("/collaboration.js", (_req, res) =>
+    res.sendFile(at("packages/editor-adapter/collaboration.js"), {
+      dotfiles: "allow",
+    }),
   );
   app.get("/adapter.js", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/adapter.js")),
+    res.sendFile(at("packages/editor-adapter/adapter.js"), {
+      dotfiles: "allow",
+    }),
   );
   app.get("/adapter.css", (_req, res) =>
-    res.sendFile(at("packages/editor-adapter/adapter.css")),
+    res.sendFile(at("packages/editor-adapter/adapter.css"), {
+      dotfiles: "allow",
+    }),
   );
-  app.get("/mark.svg", (_req, res) => res.sendFile(at("assets/mark.svg")));
+  app.get("/mark.svg", (_req, res) =>
+    res.sendFile(at("assets/mark.svg"), { dotfiles: "allow" }),
+  );
   app.use("/fonts", express.static(at("assets/fonts")));
   app.use(
     express.static(at("vendor/drawio"), { index: false, dotfiles: "deny" }),

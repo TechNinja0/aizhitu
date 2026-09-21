@@ -244,7 +244,8 @@ export async function startServer({
     aiRoute((req) => {
       const documentId = req.headers["x-document-id"];
       if (workspace && documentId) {
-        workspace.requireLock(
+        if (req.headers["x-collaboration-token"]) workspace.collaboration.require(String(documentId), actor(req), req.headers["x-collaboration-token"]);
+        else workspace.requireLock(
           String(documentId),
           actor(req),
           req.headers["x-lock-token"],
@@ -405,7 +406,7 @@ export async function startServer({
       return void res.status(404).end();
     res.status((await jobs.cancel(String(req.params.id))) ? 204 : 404).end();
   });
-  app.get("/mark.svg", (_req, res) => res.sendFile(at("assets/mark.svg")));
+  app.get("/mark.svg", (_req, res) => res.sendFile(at("assets/mark.svg"), { dotfiles: "allow" }));
   app.use("/fonts", express.static(at("assets/fonts")));
   app.use("/help", express.static(at("packages/ai-support")));
   if (vite) app.use(vite.middlewares);

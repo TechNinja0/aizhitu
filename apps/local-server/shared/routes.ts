@@ -71,6 +71,35 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
       });
     }
   });
+  app.post(
+    "/api/documents/:id/collaboration/join",
+    route((r) =>
+      store.collaboration.join(String(r.params.id), actor(r), r.body?.client),
+    ),
+  );
+  app.post(
+    "/api/documents/:id/collaboration/state",
+    route((r) =>
+      store.collaboration.state(
+        String(r.params.id),
+        actor(r),
+        r.body?.token,
+        r.body?.revision,
+      ),
+    ),
+  );
+  app.post(
+    "/api/documents/:id/collaboration/sync",
+    route((r) =>
+      store.collaboration.sync(String(r.params.id), r.body, actor(r)),
+    ),
+  );
+  app.post(
+    "/api/documents/:id/collaboration/leave",
+    route((r) =>
+      store.collaboration.leave(String(r.params.id), actor(r), r.body?.token),
+    ),
+  );
   app.get(
     "/api/documents/:id/sharing",
     route((r) => store.sharing(String(r.params.id), actor(r))),
@@ -91,12 +120,18 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
     "/api/documents/:id/state",
     route((r) => {
       const { xml, ...state } = store.get(String(r.params.id));
-      return state;
+      return {
+        ...state,
+        collaborators: store.collaboration.members(String(r.params.id)),
+      };
     }),
   );
   app.get(
     "/api/documents/:id",
-    route((r) => store.get(String(r.params.id))),
+    route((r) => ({
+      ...store.get(String(r.params.id)),
+      collaborators: store.collaboration.members(String(r.params.id)),
+    })),
   );
   app.post(
     "/api/documents/:id/lock",

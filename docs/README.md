@@ -4,6 +4,8 @@
 
 | 文档 | 用途 |
 | --- | --- |
+| [多人协同技术方案](design/COLLABORATION.md) | 对象属性合并、协议、事务、撤销、断线与容量边界 |
+| [多人协同验证](testing/COLLABORATION_REPORT.md) | 双账号并发、幂等、在途修改、断线、撤权及回归结果 |
 | [账号与用户管理](ACCOUNTS.md) | 固定账号、旧身份升级、密码恢复、停用、图稿转移及 HTTPS |
 | [v1.5 账号验证](testing/V1_5_ACCOUNTS_REPORT.md) | 账号迁移、管理员操作、多浏览器和 HTTPS 自测 |
 | [v1.4 分享权限验证](testing/V1_4_SHARING_REPORT.md) | 默认私有、指定成员、直接链接鉴权、收回权限与多人回归 |

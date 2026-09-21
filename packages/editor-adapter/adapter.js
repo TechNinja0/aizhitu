@@ -1,3 +1,4 @@
+import { mergeXml, equivalentXml } from "./collaboration.js";
 /* Local, versioned integration. Upstream bundles remain unmodified. */
 (function () {
   "use strict";
@@ -46,6 +47,36 @@
       source: cell.source?.id,
       target: cell.target?.id,
     });
+  const collaboration = { active: false, before: '', undo: [], redo: [] };
+  const xmlData = () => ui.getFileData(true, null, null, null, true, true, null, false, null, true);
+  const replaceCollaborative = (xml) => {
+    const parsed = mxUtils.parseXml(xml), model = new mxGraphModel();
+    new mxCodec(parsed).decode(parsed.getElementsByTagName('mxGraphModel')[0], model);
+    const selection = graph.getSelectionCells().map(c => c.id);
+    const scale = graph.view.scale, translate = graph.view.translate.clone();
+    loading = true;
+    try {
+      graph.model.setRoot(model.root);
+      ui.editor.undoManager.clear();
+      graph.setSelectionCells(selection.map(id => graph.model.getCell(id)).filter(Boolean));
+      graph.view.scaleAndTranslate(scale, translate.x, translate.y);
+      graph.refresh();
+      revision++;
+      collaboration.before = xmlData();
+    } finally { loading = false; }
+  };
+  const collaborativeUndo = (redo) => {
+    const from = redo ? collaboration.redo : collaboration.undo;
+    const to = redo ? collaboration.undo : collaboration.redo;
+    const entry = from.at(-1);
+    if (!entry) return;
+    const current = xmlData();
+    const next = mergeXml(redo ? entry.before : entry.after, redo ? entry.after : entry.before, current, undefined, undefined, true).xml;
+    replaceCollaborative(next);
+    from.pop();
+    to.push(redo ? {before: current, after: xmlData()} : {before: xmlData(), after: current});
+    schedule();
+  };
   const snapshot = () => {
     graph.stopEditing(false);
     return {
@@ -69,8 +100,8 @@
         nodes: Object.values(graph.model.cells).filter((c) => c.vertex).length,
         edges: Object.values(graph.model.cells).filter((c) => c.edge).length,
       },
-      canUndo: ui.editor.undoManager.canUndo(),
-      canRedo: ui.editor.undoManager.canRedo(),
+      canUndo: collaboration.active ? collaboration.undo.length > 0 : ui.editor.undoManager.canUndo(),
+      canRedo: collaboration.active ? collaboration.redo.length > 0 : ui.editor.undoManager.canRedo(),
     };
   };
   const changed = () => {
@@ -164,6 +195,25 @@
     };
   }
   const methods = {
+    collaborationMode: ({value, client}) => {
+      graph.stopEditing(false);
+      collaboration.active = !!value;
+      collaboration.undo = []; collaboration.redo = [];
+      collaboration.before = xmlData();
+      // IDs are allocated locally and remain unique across tabs and offline edits.
+      if (value) graph.model.prefix = 'co-' + client + '-';
+      ui.editor.undoManager.clear();
+      return snapshot();
+    },
+    collaborationApply: ({base, xml}) => {
+      // Do not end IME composition, text editing or an active pointer gesture for remote sync.
+      if (graph.isEditing() || graph.isMouseDown) return { deferred: true };
+      const current = xmlData();
+      const merged = mergeXml(base, current, xml);
+      if (!equivalentXml(current, merged.xml)) replaceCollaborative(merged.xml);
+      const result = snapshot();
+      return {...result, dirty: !equivalentXml(result.xml, xml), conflicts: merged.conflicts};
+    },
     setReadOnly: ({ value }) => { readOnly = !!value; graph.stopEditing(false); graph.setEnabled(!readOnly); document.body.classList.toggle("workbench-readonly", readOnly); return { readOnly }; },
     capabilities: () => ({ version: "1.0.0", kernel: "31.4.6" }),
     load: ({ xml }) => {
@@ -541,6 +591,12 @@
     graph.model.addListener(mxEvent.CHANGE, () => {
       if (!loading) {
         revision++;
+        if (collaboration.active) {
+          const after = xmlData();
+          collaboration.undo.push({before: collaboration.before, after});
+          if (collaboration.undo.length > 100) collaboration.undo.shift();
+          collaboration.redo = []; collaboration.before = after;
+        }
         schedule();
       }
     });
@@ -551,6 +607,17 @@
           ids: graph.getSelectionCells().map((c) => c.id),
         });
     });
+    for (const name of ['undo', 'redo']) {
+      const action = ui.actions.get(name), original = action.funct;
+      action.funct = function (...args) {
+        if (collaboration.active) return collaborativeUndo(name === 'redo');
+        return original.apply(this, args);
+      };
+      const enabled = action.isEnabled;
+      action.isEnabled = function () {
+        return collaboration.active ? !readOnly && collaboration[name].length > 0 : enabled.call(this);
+      };
+    }
     // Block native menu/keyboard editing as well as host commands in read-only mode.
     for (const action of Object.values(ui.actions.actions)) {
       const original = action.funct;
@@ -596,7 +663,7 @@
       invoke: async (method, args = {}) => {
         if (!Object.prototype.hasOwnProperty.call(methods, method))
           throw Error("未知操作");
-        if (readOnly && !["capabilities", "setReadOnly", "load", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance"].includes(method)) throw Error("当前为只读，请先获取编辑权");
+        if (readOnly && !["capabilities", "setReadOnly", "load", "collaborationMode", "collaborationApply", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance"].includes(method)) throw Error("当前为只读，请先获取编辑权");
         return methods[method](args);
       },
     };
