@@ -1,3 +1,4 @@
+import { startPolling } from "./polling";
 import { collaborationPresentation } from "./collaboration-policy";
 import { useCollaboration } from "./Collaboration";
 import { startNewDocument } from "./NewDocument";
@@ -279,12 +280,12 @@ function Library({
     setError("");
     if (table.current) table.current.scrollTop = 0;
     void reload();
-    const timer = setInterval(() => {
-      if (!pendingRequests.current) void reload();
-    }, 3000);
+    const stopPolling = startPolling(async () => {
+      if (!pendingRequests.current) await reload();
+    }, 3000, { background: 30000, immediate: false });
     return () => {
       requestSequence.current++;
-      clearInterval(timer);
+      stopPolling();
     };
   }, [endpoint]);
   const run = async (fn: () => Promise<void>) => {
@@ -731,7 +732,7 @@ function Library({
         />
       )}
       <footer>
-        已保存文件保存在运行服务的电脑上 · 每份图稿保留最近 50 个服务器版本 ·
+        已保存文件保存在运行服务的电脑上 · 每份图稿最多保留 50 个服务器版本，大图按容量缩减 ·
         回收站中的文件可恢复
       </footer>
     </main>
@@ -1229,7 +1230,7 @@ export function useSharedDocument(options: Options) {
             </div>
             <p>
               仅在内容变化时保存版本，最多保留 50
-              个。恢复会生成新版本；请让其他编辑页面切换为仅查看或返回文件库后再恢复。
+              个，大图按 64 MiB 历史容量缩减，至少保留最近两个版本。恢复会生成新版本；请让其他编辑页面切换为仅查看或返回文件库后再恢复。
             </p>
             {versions.map((v) => (
               <div className="shared-version" key={v.revision}>

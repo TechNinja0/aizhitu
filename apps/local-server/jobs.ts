@@ -28,11 +28,18 @@ export class Jobs {
   closed = false;
   storage = mkdtemp(join(tmpdir(), "diagram-exports-"));
   cleanupTimer: NodeJS.Timeout;
-  constructor(public renderer: Renderer) {
+  private idleTimer?: NodeJS.Timeout;
+  private releasing?: Promise<void>;
+  constructor(
+    public renderer: Renderer,
+    private idleMs = 60_000,
+  ) {
     this.cleanupTimer = setInterval(() => this.cleanup(), 60000);
     this.cleanupTimer.unref();
   }
   add(xml: string, options: ExportOptions) {
+    if (this.closed) throw Error("导出服务已关闭");
+    clearTimeout(this.idleTimer);
     this.cleanup();
     if (
       [...this.jobs.values()].filter((j) => j.status === "queued").length >= 4
@@ -60,9 +67,13 @@ export class Jobs {
       }
   }
   async pump() {
-    if (this.running || this.closed) return;
+    if (this.running || this.closed || this.releasing) return;
     const j = [...this.jobs.values()].find((j) => j.status === "queued");
-    if (!j) return;
+    if (!j) {
+      this.scheduleRelease();
+      return;
+    }
+    clearTimeout(this.idleTimer);
     this.running = true;
     j.status = "running";
     let timer: NodeJS.Timeout | undefined;
@@ -97,6 +108,23 @@ export class Jobs {
       void this.pump();
     }
   }
+  private scheduleRelease() {
+    clearTimeout(this.idleTimer);
+    if (this.closed) return;
+    this.idleTimer = setTimeout(() => {
+      if (this.running || this.closed) return;
+      // Serialize closing with the queue: jobs arriving during close wait for it.
+      this.releasing = this.renderer
+        .close()
+        .catch(() => {})
+        .finally(() => {
+          this.releasing = undefined;
+          if ([...this.jobs.values()].some((j) => j.status === "queued"))
+            void this.pump();
+        });
+    }, this.idleMs);
+    this.idleTimer.unref();
+  }
   async cancel(id: string) {
     const j = this.jobs.get(id);
     if (!j) return false;
@@ -110,9 +138,11 @@ export class Jobs {
   }
   async close() {
     this.closed = true;
+    clearTimeout(this.idleTimer);
     clearInterval(this.cleanupTimer);
     for (const j of this.jobs.values()) j.status = "cancelled";
-    await this.renderer.close();
+    if (this.releasing) await this.releasing;
+    else await this.renderer.close();
     await rm(await this.storage, { recursive: true, force: true });
   }
 }

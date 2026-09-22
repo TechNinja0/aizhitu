@@ -1,5 +1,6 @@
 import { CandidatePreview, downloadCandidate } from "./CandidatePreview";
 import { addVersion } from "./versions";
+import { startPolling } from "./polling";
 import React, { useEffect, useRef, useState } from "react";
 import type { Bridge } from "./bridge";
 type Provider = "codex" | "qoder";
@@ -88,10 +89,11 @@ export function AIChat({
   const [clock, setClock] = useState(Date.now());
   const messagesEnd = useRef<HTMLDivElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
+  const jobRunning = !!job && ["queued", "running", "validating"].includes(job.status);
   useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    if (!open || !jobRunning) return;
+    return startPolling(() => setClock(Date.now()), 1000);
+  }, [open, jobRunning]);
   useEffect(() => {
     if (open) messagesEnd.current?.scrollIntoView({ block: "nearest" });
   }, [messages, job?.progress?.at(-1)?.text, open]);
@@ -152,20 +154,18 @@ export function AIChat({
   useEffect(() => {
     mounted.current = true;
     void refresh().catch(() => setNotice("本地 AI 服务不可达"));
-    const timer = setInterval(
-      () =>
-        void refresh().catch(() => {
-          setClients([]);
-          setNotice("本地 AI 服务不可达，请检查服务是否运行");
-        }),
-      15000,
-    );
     return () => {
       mounted.current = false;
-      clearInterval(timer);
       if (url.current) URL.revokeObjectURL(url.current);
     };
   }, []);
+  useEffect(() => {
+    if (!open && !settingsOpen && !jobRunning) return;
+    return startPolling(() => refresh().catch(() => {
+      setClients([]);
+      setNotice("本地 AI 服务不可达，请检查服务是否运行");
+    }), 15000);
+  }, [open, settingsOpen, jobRunning]);
   useEffect(() => {
     if (settingsOpen && savedConfig.current)
       setConfig(JSON.parse(savedConfig.current));

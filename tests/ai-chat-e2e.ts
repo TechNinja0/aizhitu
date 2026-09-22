@@ -52,7 +52,7 @@ await ai.save({
     qoder: { path: process.execPath, model: "" },
   },
 });
-const server = await startServer({ port: 0, aiService: ai }),
+const server = await startServer({ port: 0, aiService: ai, dataDirectory: dir }),
   browser = await chromium.launch({ channel: "chromium" }),
   page = await browser.newPage({ viewport: { width: 1600, height: 1000 } }),
   checks: string[] = [];

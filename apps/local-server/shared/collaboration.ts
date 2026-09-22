@@ -19,6 +19,22 @@ export class CollaborationStore {
       documentId TEXT NOT NULL REFERENCES documents(id), owner TEXT NOT NULL, requestId TEXT NOT NULL,
       fingerprint TEXT NOT NULL, revision INTEGER NOT NULL,
       PRIMARY KEY(documentId,owner,requestId));`);
+    if (
+      !store.db
+        .prepare("PRAGMA table_info(collaboration_receipts)")
+        .all()
+        .some((c) => c.name === "createdAt")
+    ) {
+      store.db.exec(
+        "ALTER TABLE collaboration_receipts ADD COLUMN createdAt INTEGER NOT NULL DEFAULT 0",
+      );
+      store.db
+        .prepare("UPDATE collaboration_receipts SET createdAt=?")
+        .run(this.now());
+    }
+    store.db.exec(
+      "CREATE INDEX IF NOT EXISTS collaboration_receipts_expiry ON collaboration_receipts(documentId,createdAt,revision)",
+    );
   }
   members(id: string) {
     const d = this.store.get(id);
@@ -150,29 +166,37 @@ export class CollaborationStore {
         };
       }
       const current = this.store.get(id);
-      const base = this.store.db
-        .prepare(
-          "SELECT xml,name FROM versions WHERE documentId=? AND revision=?",
-        )
-        .get(id, input.revision);
+      const base =
+        current.revision === input.revision
+          ? current
+          : this.store.db
+              .prepare(
+                "SELECT xml,name FROM versions WHERE documentId=? AND revision=?",
+              )
+              .get(id, input.revision);
       if (!base)
         throw new HttpError(
           409,
-          "离线基线已超过保留的 50 个版本，请下载当前副本后加载最新版本",
+          "离线基线已超出历史版本保留范围，请下载当前副本后加载最新版本",
         );
+      const sameRevision = current.revision === input.revision;
       let merged;
       try {
-        merged = mergeXml(
-          String(base.xml),
-          xml,
-          current.xml,
-          DOMParser,
-          XMLSerializer,
-        );
+        merged = sameRevision
+          ? { xml, conflicts: [] as string[] }
+          : mergeXml(
+              String(base.xml),
+              xml,
+              current.xml,
+              DOMParser,
+              XMLSerializer,
+            );
       } catch (e) {
         throw new HttpError(409, (e as Error).message);
       }
-      const content = this.store.xml(merged.xml, id);
+      // The input was already validated. Only a concurrent merge creates new XML
+      // which needs a second validation (including cycles and document identity).
+      const content = sameRevision ? xml : this.store.xml(merged.xml, id);
       const title = name === base.name ? current.name : name;
       if (
         name !== base.name &&
@@ -193,8 +217,26 @@ export class CollaborationStore {
       }
       const document = this.store.describe(id, actor);
       this.store.db
-        .prepare("INSERT INTO collaboration_receipts VALUES (?,?,?,?,?)")
-        .run(id, actor.id, input.requestId, fingerprint, document.revision);
+        .prepare(
+          "INSERT INTO collaboration_receipts (documentId,owner,requestId,fingerprint,revision,createdAt) VALUES (?,?,?,?,?,?)",
+        )
+        .run(
+          id,
+          actor.id,
+          input.requestId,
+          fingerprint,
+          document.revision,
+          this.now(),
+        );
+      // Never evict receipts whose base could still be replayed as a fresh write.
+      // Once the result revision is older than every retained base, an expired
+      // retry is rejected by the baseline check instead of being applied twice.
+      this.store.db
+        .prepare(
+          `DELETE FROM collaboration_receipts WHERE documentId=?
+        AND createdAt<? AND revision<(SELECT MIN(revision) FROM versions WHERE documentId=?)`,
+        )
+        .run(id, this.now() - 24 * 60 * 60 * 1000, id);
       return { document, conflicts: merged.conflicts, duplicate: false };
     });
   }

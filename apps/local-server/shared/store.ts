@@ -55,6 +55,7 @@ export class WorkspaceStore {
     public directory: string,
     public leaseMs = 30_000,
     private now = Date.now,
+    private historyBytes = 64 * 1024 * 1024,
   ) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path.join(directory, "workspace.sqlite"));
@@ -131,6 +132,13 @@ export class WorkspaceStore {
         "ALTER TABLE document_creations ADD COLUMN fingerprint TEXT",
       );
     this.accounts = new Accounts(this, this.now);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(versions)")
+        .all()
+        .some((c) => c.name === "xmlBytes")
+    )
+      this.db.exec("ALTER TABLE versions ADD COLUMN xmlBytes INTEGER");
     this.collaboration = new CollaborationStore(this, this.now);
     this.db
       .exec(`CREATE INDEX IF NOT EXISTS documents_list_order ON documents(deleted,draft,updatedAt DESC,id);
@@ -728,13 +736,41 @@ export class WorkspaceStore {
   record(id: string, label: string) {
     const d = this.get(id, true);
     this.db
-      .prepare("INSERT INTO versions VALUES (?,?,?,?,?,?,?)")
-      .run(id, d.revision, d.name, d.xml, d.updatedBy, d.updatedAt, label);
+      .prepare(
+        "INSERT INTO versions (documentId,revision,name,xml,author,time,label,xmlBytes) VALUES (?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        id,
+        d.revision,
+        d.name,
+        d.xml,
+        d.updatedBy,
+        d.updatedAt,
+        label,
+        Buffer.byteLength(d.xml),
+      );
+    // Backfill only this document's old rows, once, rather than loading all XML on startup.
     this.db
       .prepare(
-        "DELETE FROM versions WHERE documentId=? AND revision NOT IN (SELECT revision FROM versions WHERE documentId=? ORDER BY revision DESC LIMIT 50)",
+        "UPDATE versions SET xmlBytes=length(CAST(xml AS BLOB)) WHERE documentId=? AND xmlBytes IS NULL",
       )
-      .run(id, id);
+      .run(id);
+    const versions = this.db
+      .prepare(
+        "SELECT revision,xmlBytes FROM versions WHERE documentId=? ORDER BY revision DESC",
+      )
+      .all(id);
+    let bytes = 0,
+      oldest = d.revision;
+    for (const [index, version] of versions.entries()) {
+      bytes += Number(version.xmlBytes);
+      // Retain a current and previous version even for an oversized document.
+      if (index >= 2 && (index >= 50 || bytes > this.historyBytes)) break;
+      oldest = Number(version.revision);
+    }
+    this.db
+      .prepare("DELETE FROM versions WHERE documentId=? AND revision<?")
+      .run(id, oldest);
   }
   versions(id: string) {
     this.get(id);

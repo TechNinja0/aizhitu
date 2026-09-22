@@ -49,7 +49,7 @@ SQLite 新增两张表，启动时使用 `CREATE TABLE IF NOT EXISTS` 平滑创�
 - `collaborators(documentId, client, owner, name, token, expires)`：主键为文档与页面 ID。随机 token 绑定文档、账号和页面；30 秒无心跳即失效。读取在线成员不暴露 token。
 - `collaboration_receipts(documentId, owner, requestId, fingerprint, revision)`：主键为文档、账号、请求 ID。记录请求规范化内容的 SHA-256 摘要和提交修订号，用于重试去重。回执与图稿及版本在同一事务中落盘。
 
-`documents` 仍是服务端当前状态；`versions` 仍保留最近 50 次有效内容或名称变更。协同每次有变化的保存记为“协同编辑”。仅视口变化、相同内容重传和幂等重试不创建版本。
+`documents` 仍是服务端当前状态；`versions` 保留最多 50 次有效内容或名称变更，并受 64 MiB XML 容量预算约束；至少保留最近两版。协同每次有变化的保存记为“协同编辑”。仅视口变化、相同内容重传和幂等重试不创建版本。
 
 ## 合并协议
 

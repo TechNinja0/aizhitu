@@ -226,6 +226,7 @@ export function mergeXml(
 }
 
 export function equivalentXml(a, b, Parser = globalThis.DOMParser) {
+  if (a === b) return true;
   const shape = (xml) => {
     const doc = new Parser().parseFromString(xml, "text/xml");
     const walk = (n) => [
@@ -240,4 +241,16 @@ export function equivalentXml(a, b, Parser = globalThis.DOMParser) {
     return JSON.stringify(walk(doc.getElementsByTagName("root")[0]));
   };
   return shape(a) === shape(b);
+}
+
+// Conservatively account for UTF-16 strings, including both sides of each edit.
+// Keep one oversized edit so applying a large AI candidate can still be undone.
+export function limitHistory(recent, other, maxBytes = 32 * 1024 * 1024, maxCount = 100) {
+  const size = (entry) => 2 * (entry.before.length + entry.after.length);
+  let bytes = [...recent, ...other].reduce((sum, entry) => sum + size(entry), 0);
+  while (recent.length + other.length > 1 &&
+    (bytes > maxBytes || recent.length + other.length > maxCount)) {
+    const oldest = other.length ? other : recent;
+    bytes -= size(oldest.shift());
+  }
 }

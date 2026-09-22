@@ -11,7 +11,7 @@ import { SaveTemplate } from "./SaveTemplate";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Bridge } from "./bridge";
-import { allDrafts, storeDraft, deleteDraft, type Draft } from "./drafts";
+import { allDrafts, getDraft, storeDraft, deleteDraft, type DraftSummary } from "./drafts";
 import type {
   Metadata,
   Validation,
@@ -209,7 +209,7 @@ function App() {
     [jobStatus, setJobStatus] = useState("");
   const [error, setError] = useState(""),
     [toast, setToast] = useState(""),
-    [drafts, setDrafts] = useState<Draft[]>([]),
+    [drafts, setDrafts] = useState<DraftSummary[]>([]),
     [draftOpen, setDraftOpen] = useState(false),
     [pending, setPending] = useState(false),
     [source, setSource] = useState<{
@@ -1204,7 +1204,7 @@ function App() {
       {draftOpen && (
         <Modal title="恢复浏览器草稿" onClose={() => setDraftOpen(false)}>
           <p className="modal-description">
-            这些是浏览器中的恢复副本，不代表文件已保存到磁盘。
+            这些是浏览器中的恢复副本，不代表文件已保存到磁盘。最多保留 20 份、每图 3 份，旧草稿会按容量和时间自动清理，请及时下载重要图稿。
           </p>
           <div className="draft-list">
             {drafts.length ? (
@@ -1218,7 +1218,8 @@ function App() {
                     onClick={() => {
                       setDraftOpen(false);
                       void guard(async () => {
-                        await load(d.xml, d.name);
+                        const draft = await getDraft(d.key);
+                        await load(draft.xml, draft.name);
                         setDirty(true);
                         savedRevision.current = -1;
                         setStatus("已恢复草稿 · 请下载副本");

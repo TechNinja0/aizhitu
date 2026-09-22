@@ -240,6 +240,9 @@ export class Renderer {
             preferCSSPageSize: true,
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
           });
+    // Do not retain a large raster surface while waiting for the next export.
+    await out.setContent("<!doctype html><html><body></body></html>");
+    await out.setViewportSize({ width: 1440, height: 1000 });
     return {
       data: options.embedSource ? embedSource(data,"png",doc.xml!) : data,
       width: width * scale,

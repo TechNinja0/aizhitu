@@ -91,3 +91,102 @@ test("cancelled running job discards late output; a failed job does not poison t
   assert.equal(jobs.jobs.get(good)?.xml, undefined);
   await jobs.close();
 });
+
+test("idle renderer closes once, new jobs wait for close and restart normally", async () => {
+  let closes = 0,
+    rendering = false,
+    release: (() => void) | undefined;
+  const renderer = {
+    render: async () => {
+      assert.equal(
+        release,
+        undefined,
+        "must not render while browser is closing",
+      );
+      rendering = true;
+      await wait(10);
+      rendering = false;
+      return {
+        data: Buffer.from("ok"),
+        mime: "image/png",
+        width: 1,
+        height: 1,
+        warnings: [],
+      };
+    },
+    reset: async () => {},
+    close: async () => {
+      assert.equal(rendering, false);
+      closes++;
+      await new Promise<void>((r) => {
+        release = () => {
+          release = undefined;
+          r();
+        };
+      });
+    },
+  } as unknown as Renderer;
+  const jobs = new Jobs(renderer, 20);
+  try {
+    const first = jobs.add("first", { format: "png" });
+    for (let i = 0; !release && i < 100; i++) await wait(5);
+    assert.equal(jobs.jobs.get(first)?.status, "succeeded");
+    assert.equal(closes, 1);
+    const next = jobs.add("next", { format: "png" });
+    await wait(10);
+    assert.equal(jobs.jobs.get(next)?.status, "queued");
+    release!();
+    for (let i = 0; jobs.jobs.get(next)?.status !== "succeeded" && i < 100; i++)
+      await wait(5);
+    assert.equal(jobs.jobs.get(next)?.status, "succeeded");
+    await wait(40);
+    assert.equal(closes, 2);
+    release!();
+    await wait(40);
+    assert.equal(
+      closes,
+      2,
+      "idle cleanup must not become a recurring close loop",
+    );
+  } finally {
+    const closing = jobs.close();
+    release?.();
+    await closing;
+  }
+  assert.throws(() => jobs.add("late", { format: "png" }), /关闭/);
+});
+
+test("busy export is never closed by the idle timer", async () => {
+  let active = false,
+    closes = 0;
+  const renderer = {
+    render: async () => {
+      active = true;
+      await wait(70);
+      active = false;
+      return {
+        data: Buffer.from("ok"),
+        mime: "image/png",
+        width: 1,
+        height: 1,
+        warnings: [],
+      };
+    },
+    reset: async () => {},
+    close: async () => {
+      assert.equal(active, false);
+      closes++;
+    },
+  } as unknown as Renderer;
+  const jobs = new Jobs(renderer, 15);
+  try {
+    jobs.add("one", { format: "png" });
+    jobs.add("two", { format: "png" });
+    await wait(100);
+    assert.equal(closes, 0);
+    await wait(90);
+    assert.equal(closes, 1);
+  } finally {
+    await jobs.close();
+  }
+});

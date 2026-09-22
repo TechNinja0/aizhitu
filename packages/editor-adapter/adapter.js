@@ -1,4 +1,4 @@
-import { mergeXml, equivalentXml } from "./collaboration.js";
+import { mergeXml, equivalentXml, limitHistory } from "./collaboration.js";
 /* Local, versioned integration. Upstream bundles remain unmodified. */
 (function () {
   "use strict";
@@ -75,6 +75,7 @@ import { mergeXml, equivalentXml } from "./collaboration.js";
     replaceCollaborative(next);
     from.pop();
     to.push(redo ? {before: current, after: xmlData()} : {before: xmlData(), after: current});
+    limitHistory(to, from);
     schedule();
   };
   const snapshot = () => {
@@ -596,8 +597,8 @@ import { mergeXml, equivalentXml } from "./collaboration.js";
         if (collaboration.active) {
           const after = xmlData();
           collaboration.undo.push({before: collaboration.before, after});
-          if (collaboration.undo.length > 100) collaboration.undo.shift();
           collaboration.redo = []; collaboration.before = after;
+          limitHistory(collaboration.undo, collaboration.redo);
         }
         schedule();
       }

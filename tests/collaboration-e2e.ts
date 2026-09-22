@@ -293,7 +293,9 @@ try {
     .click();
   await sharing.getByRole("button", { name: "关闭", exact: true }).click();
   await b.getByText("同步已暂停", { exact: true }).waitFor();
-  await assert.rejects(invoke(b, "action", { name: "delete" }), /只读/);
+  const readOnlyXml = (await invoke(b, "snapshot")).xml;
+  await assert.rejects(invoke(b, "action", { name: "delete" }), /当前仅查看/);
+  assert.equal((await invoke(b, "snapshot")).xml, readOnlyXml);
   pass("所有者收回分享权限后，被撤权端暂停同步且画布只读");
   await a.getByRole("link", { name: "← 文件库", exact: true }).click();
   await a.getByRole("heading", { name: "文件库", exact: true }).waitFor();

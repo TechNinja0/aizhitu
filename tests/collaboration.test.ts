@@ -462,3 +462,177 @@ test("协同整稿操作：仅当前页面可恢复或删除，其他页面、�
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("same-revision fast path keeps validation, semantic no-op and receipt retry semantics", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "zhitu-collab-fast-"));
+  const store = new WorkspaceStore(dir);
+  try {
+    const actor = store.enter("甲").actor,
+      d = store.create("原名", source, actor);
+    const joined = store.collaboration.join(d.id, actor, "fast-client");
+    const input = {
+      token: joined.token,
+      requestId: randomUUID(),
+      revision: 1,
+      name: d.name,
+      xml: d.xml.replace(
+        'compressed="false"',
+        'modified="now" compressed="false"',
+      ),
+    };
+    assert.equal(
+      store.collaboration.sync(d.id, input, actor).document.revision,
+      1,
+    );
+    const edited = {
+      ...input,
+      requestId: randomUUID(),
+      xml: change(d.xml, "start", { value: "新内容" }),
+    };
+    assert.equal(
+      store.collaboration.sync(d.id, edited, actor).document.revision,
+      2,
+    );
+    assert.equal(store.collaboration.sync(d.id, edited, actor).duplicate, true);
+    assert.throws(
+      () =>
+        store.collaboration.sync(
+          d.id,
+          {
+            ...edited,
+            requestId: randomUUID(),
+            revision: 2,
+            xml: "<invalid/>",
+          },
+          actor,
+        ),
+      (e: any) => e.status === 422,
+    );
+    assert.equal(store.get(d.id).revision, 2);
+  } finally {
+    store.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("history bytes evict old bases; only expired receipts with unreplayable revisions are removed", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "zhitu-collab-bounded-"));
+  let now = 1000;
+  // Deliberately tiny budget: always preserve the latest two versions.
+  const store = new WorkspaceStore(dir, 30000, () => now, 1);
+  try {
+    const actor = store.enter("甲").actor,
+      d = store.create("原名", source, actor);
+    let joined = store.collaboration.join(d.id, actor, "bounded-client");
+    const input = {
+      token: joined.token,
+      requestId: randomUUID(),
+      revision: 1,
+      name: "第二版",
+      xml: d.xml,
+    };
+    store.collaboration.sync(d.id, input, actor);
+    for (let i = 0; i < 4; i++) {
+      const current = store.get(d.id);
+      store.collaboration.sync(
+        d.id,
+        {
+          ...input,
+          requestId: randomUUID(),
+          revision: current.revision,
+          name: "版本" + i,
+          xml: current.xml,
+        },
+        actor,
+      );
+    }
+    assert.equal(store.versions(d.id).length, 2);
+    assert.equal(
+      store.collaboration.sync(d.id, input, actor).duplicate,
+      true,
+      "recent receipts survive evicted bases",
+    );
+    now += 25 * 60 * 60 * 1000;
+    joined = store.collaboration.join(d.id, actor, "bounded-client");
+    const current = store.get(d.id);
+    const latest = {
+      ...input,
+      requestId: randomUUID(),
+      token: joined.token,
+      revision: current.revision,
+      name: current.name,
+      xml: current.xml,
+    };
+    store.collaboration.sync(d.id, latest, actor);
+    assert.equal(
+      store.db
+        .prepare(
+          "SELECT count(*) AS n FROM collaboration_receipts WHERE requestId=?",
+        )
+        .get(input.requestId)!.n,
+      0,
+    );
+    assert.throws(
+      () =>
+        store.collaboration.sync(
+          d.id,
+          { ...input, token: joined.token },
+          actor,
+        ),
+      (e: any) => e.status === 409,
+    );
+    assert.equal(store.collaboration.sync(d.id, latest, actor).duplicate, true);
+    assert.equal(
+      store.get(d.id).revision,
+      current.revision,
+      "expired retry must not overwrite current content",
+    );
+  } finally {
+    store.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("legacy version and receipt schema upgrades preserve XML, old retries and byte accounting", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "zhitu-collab-schema-"));
+  let store = new WorkspaceStore(dir);
+  try {
+    const actor = store.enter("甲").actor,
+      d = store.create("原名", source, actor);
+    const joined = store.collaboration.join(d.id, actor, "upgrade-client");
+    const input = {
+      token: joined.token,
+      requestId: randomUUID(),
+      revision: 1,
+      name: "新名",
+      xml: d.xml,
+    };
+    const saved = store.collaboration.sync(d.id, input, actor).document;
+    store.db.exec(
+      "ALTER TABLE versions DROP COLUMN xmlBytes; DROP INDEX collaboration_receipts_expiry; ALTER TABLE collaboration_receipts DROP COLUMN createdAt",
+    );
+    store.close();
+    store = new WorkspaceStore(dir);
+    assert.equal(store.get(d.id).xml, saved.xml);
+    assert.equal(store.collaboration.sync(d.id, input, actor).duplicate, true);
+    store.collaboration.sync(
+      d.id,
+      {
+        ...input,
+        requestId: randomUUID(),
+        revision: saved.revision,
+        name: "继续编辑",
+      },
+      actor,
+    );
+    assert.equal(
+      store.db
+        .prepare("SELECT count(*) AS n FROM versions WHERE xmlBytes IS NULL")
+        .get()!.n,
+      0,
+    );
+  } finally {
+    store.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
