@@ -1,3 +1,4 @@
+import { AIHistory } from "./history.ts";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -31,6 +32,11 @@ type Request = {
 };
 type Job = {
   id: string;
+  owner?: string;
+  workspaceDocument?: boolean;
+  baseXml?: string;
+  hasImage?: boolean;
+  mode?: string;
   provider: Provider;
   kind: "test" | "generate";
   status:
@@ -93,6 +99,7 @@ export function candidateXml(answer: string) {
   return answer.slice(start, end + 9);
 }
 export class AIService {
+  history!: AIHistory;
   config = initial();
   health: Record<Provider, Health> = {
     codex: { state: "unverified" },
@@ -126,6 +133,7 @@ export class AIService {
             path.join(this.directory, "clients.json"),
         );
     }
+    this.history = new AIHistory(this.directory);
     return this;
   }
   cleanConfig(value: any): Config {
@@ -268,14 +276,17 @@ export class AIService {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 12)
       .map((j) => {
-        const { controller, done, result, ...summary } = j;
+        const { controller, done, result, baseXml, owner, ...summary } = j;
         return summary;
       });
   }
-  view(id: string) {
+  view(id: string): Omit<Job, "controller" | "done" | "owner"> {
     const job = this.jobs.get(id);
-    if (!job) throw Error("任务已过期或不存在");
-    const { controller, done, ...publicJob } = job;
+    if (!job) { const {owner,...saved}=this.history.get(id); return saved; }
+    if(job.kind==="generate" && !["running","queued","validating"].includes(job.status)) {
+      try { const {owner,...saved}=this.history.get(id); return saved; } catch {}
+    }
+    const { controller, done, owner, ...publicJob } = job;
     return publicJob;
   }
   private newJob(provider: Provider, kind: Job["kind"]) {
@@ -495,7 +506,7 @@ export class AIService {
       throw Error("请选择支持的 Qoder 模型");
     return selected;
   }
-  generate(input: Request) {
+  generate(input: Request, owner = "local-admin", workspaceDocument = false) {
     const p = providerId(input?.provider),
       model = this.model(p, input.model);
     if (
@@ -555,10 +566,16 @@ export class AIService {
         throw Error("截图内容与格式不符");
     }
     const j = this.newJob(p, "generate");
+    j.owner = owner;
+    j.workspaceDocument = workspaceDocument;
+    j.baseXml = base.xml!;
+    j.hasImage = !!input.image;
+    j.mode = input.mode;
     j.revision = input.revision;
     j.requestPrompt = input.prompt;
     j.documentId = base.metadata!.documentId;
     j.model = model;
+    try { this.history.put(j); } catch (error) { this.jobs.delete(j.id); throw error; }
     j.done = this.execute(j, async (dir) => {
       const profile = await fs.readFile(
         at("packages/ai-support/diagram-drawing/references/profile-v1.md"),
@@ -681,6 +698,7 @@ export class AIService {
     } finally {
       j.finishedAt = Date.now();
       if (j.controller.signal.aborted) j.status = "cancelled";
+      try { if(this.jobs.has(j.id)) this.history.put(j); } catch { j.error = "任务完成，但历史保存失败；请立即下载候选"; }
       if (dir) await fs.rm(dir, { recursive: true, force: true });
     }
   }
@@ -693,6 +711,7 @@ export class AIService {
       j.finishedAt = Date.now();
       const queuedIndex = this.queued.findIndex((item) => item.job.id === id);
       if (queuedIndex >= 0) this.queued.splice(queuedIndex, 1)[0].resolve();
+      this.history.put(j);
     }
     return true;
   }
@@ -700,5 +719,6 @@ export class AIService {
     this.closed = true;
     for (const j of this.jobs.values()) this.cancel(j.id);
     await Promise.all([...this.jobs.values()].map((j) => j.done));
+    this.history.close();
   }
 }

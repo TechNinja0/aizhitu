@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { HttpError, WorkspaceStore, type Actor } from "./store.ts";
 
-export function sharedRoutes(app: Express, store: WorkspaceStore) {
+export function sharedRoutes(app: Express, store: WorkspaceStore, onCreate?: (document:any, xml:unknown, actor:Actor)=>void) {
   const actor = (r: Request) => (r as any).actor as Actor;
   const route = (fn: (r: Request) => unknown) => (req: Request, res: any) => {
     try {
@@ -57,15 +57,17 @@ export function sharedRoutes(app: Express, store: WorkspaceStore) {
   );
   app.post(
     "/api/documents",
-    route((r) =>
-      store.create(
+    route((r) => {
+      const document=store.create(
         r.body?.name,
         r.body?.xml,
         actor(r),
         false,
         r.body?.requestKey,
-      ),
-    ),
+      );
+      onCreate?.(document,r.body?.xml,actor(r));
+      return document;
+    }),
   );
   app.post(
     "/api/documents/batch-trash",

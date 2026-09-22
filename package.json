@@ -20,7 +20,7 @@
     "test:capabilities": "tsx tests/capabilities.ts",
     "diagram": "tsx packages/cli/main.ts",
     "setup": "node scripts/setup.mjs",
-    "check": "npm run build && npm test && npm run test:e2e && npm run test:templates && npm run test:interactions && npm run test:capabilities && npm run test:images && npm run test:enhancements && npm run test:ai-chat && npm run test:product-audit && npm run test:product-polish && npm run test:shared && npm run test:share && npm run test:library && npm run test:library-pagination && npm run test:sharing && npm run test:accounts && npm run test:collaboration && npm run test:sharing-roles && npm run test:performance",
+    "check": "npm run build && npm test && npm run test:e2e && npm run test:templates && npm run test:interactions && npm run test:capabilities && npm run test:images && npm run test:enhancements && npm run test:ai-chat && npm run test:product-audit && npm run test:product-polish && npm run test:shared && npm run test:share && npm run test:library && npm run test:library-pagination && npm run test:sharing && npm run test:accounts && npm run test:collaboration && npm run test:sharing-roles && npm run test:performance && npm run test:p0",
     "test:interactions": "tsx tests/interactions.ts",
     "test:images": "tsx tests/image-export.ts",
     "docs:check": "node scripts/check-doc-links.mjs",
@@ -39,7 +39,9 @@
     "test:collaboration": "tsx --test tests/collaboration.test.ts tests/collaboration-policy.test.ts && tsx tests/collaboration-e2e.ts && tsx tests/collaboration-policy-e2e.ts",
     "test:sharing-roles": "tsx --test tests/sharing-roles.test.ts && tsx tests/sharing-roles-e2e.ts",
     "test:performance": "tsx --test tests/performance-policy.test.ts && tsx tests/performance-e2e.ts",
-    "test:performance:benchmark": "tsx scripts/performance-probe.ts"
+    "test:performance:benchmark": "tsx scripts/performance-probe.ts",
+    "test:p0": "tsx --test tests/p0.test.ts && tsx tests/p0-e2e.ts",
+    "test:p0:stress": "tsx tests/p0-stress.ts"
   },
   "dependencies": {
     "@fontsource/noto-sans-sc": "5.3.0",

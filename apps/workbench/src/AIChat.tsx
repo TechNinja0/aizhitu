@@ -1,3 +1,5 @@
+import { DiagramReview } from "./DiagramReview";
+import { AIHistoryPanel } from "./AIHistory";
 import { CandidatePreview, downloadCandidate } from "./CandidatePreview";
 import { addVersion } from "./versions";
 import { startPolling } from "./polling";
@@ -53,6 +55,7 @@ export function AIChat({
   documentId,
   documentName,
 }: Props) {
+  const [reviewData, setReviewData] = useState<any>();
   const [config, setConfig] = useState<Config>(),
     [clients, setClients] = useState<any[]>([]),
     [provider, setProvider] = useState<Provider>("codex"),
@@ -89,7 +92,8 @@ export function AIChat({
   const [clock, setClock] = useState(Date.now());
   const messagesEnd = useRef<HTMLDivElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
-  const jobRunning = !!job && ["queued", "running", "validating"].includes(job.status);
+  const jobRunning =
+    !!job && ["queued", "running", "validating"].includes(job.status);
   useEffect(() => {
     if (!open || !jobRunning) return;
     return startPolling(() => setClock(Date.now()), 1000);
@@ -127,6 +131,7 @@ export function AIChat({
   history.current = messages;
   const resetPreview = () => {
     setOverwrite(undefined);
+    setReviewData(undefined);
     if (url.current) URL.revokeObjectURL(url.current);
     url.current = "";
     setPreview("");
@@ -161,10 +166,14 @@ export function AIChat({
   }, []);
   useEffect(() => {
     if (!open && !settingsOpen && !jobRunning) return;
-    return startPolling(() => refresh().catch(() => {
-      setClients([]);
-      setNotice("本地 AI 服务不可达，请检查服务是否运行");
-    }), 15000);
+    return startPolling(
+      () =>
+        refresh().catch(() => {
+          setClients([]);
+          setNotice("本地 AI 服务不可达，请检查服务是否运行");
+        }),
+      15000,
+    );
   }, [open, settingsOpen, jobRunning]);
   useEffect(() => {
     if (settingsOpen && savedConfig.current)
@@ -188,7 +197,8 @@ export function AIChat({
     setNotice("已切换图稿，会话已重置");
   }, [documentId]);
   useEffect(() => {
-    if (!job?.id || !["queued", "running", "validating"].includes(job.status)) return;
+    if (!job?.id || !["queued", "running", "validating"].includes(job.status))
+      return;
     let stopped = false,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -222,13 +232,22 @@ export function AIChat({
             stale = checked.baseHash !== result.result.baseHash;
             candidateRevision = current.revision;
           }
-          setCandidate({ ...result.result, revision: candidateRevision });
+          setCandidate({
+            ...result.result,
+            baseXml: result.baseXml,
+            jobId: result.id,
+            revision: candidateRevision,
+          });
           finishMessage(
             result.requestPrompt || job.requestPrompt,
             result.message,
             result,
           );
-          setNotice(stale ? "原稿已变化，候选已保留；预览后可选择强制覆盖" : result.message);
+          setNotice(
+            stale
+              ? "原稿已变化，候选已保留；预览后可选择强制覆盖"
+              : result.message,
+          );
         } else if (result.status === "failed") {
           setNotice(result.error);
           if (result.kind === "generate")
@@ -277,25 +296,29 @@ export function AIChat({
       !!active.current ||
       (!!job && ["queued", "running", "validating"].includes(job.status)),
     client = clients.find((c) => c.id === provider);
-  const status = job?.status === "queued" ? "等待服务器 AI 队列" : running
-    ? job?.kind === "test"
-      ? "正在测试连接"
-      : job?.status === "validating"
-        ? "校验候选中"
-        : "AI 生成中"
-    : !client
-      ? "本地服务未连接"
-      : !client.installed
-        ? "CLI 未安装"
-        : client.state === "error"
-          ? "AI 连接异常"
-          : client.state === "online" &&
-              client.model === (provider === "codex" ? "" : model || "Auto") &&
-              Date.now() - client.checkedAt < 15 * 60 * 1000
-            ? "AI 已连接"
-            : client.state === "online"
-              ? "连接待验证"
-              : "CLI 可用 · AI 未验证";
+  const status =
+    job?.status === "queued"
+      ? "等待服务器 AI 队列"
+      : running
+        ? job?.kind === "test"
+          ? "正在测试连接"
+          : job?.status === "validating"
+            ? "校验候选中"
+            : "AI 生成中"
+        : !client
+          ? "本地服务未连接"
+          : !client.installed
+            ? "CLI 未安装"
+            : client.state === "error"
+              ? "AI 连接异常"
+              : client.state === "online" &&
+                  client.model ===
+                    (provider === "codex" ? "" : model || "Auto") &&
+                  Date.now() - client.checkedAt < 15 * 60 * 1000
+                ? "AI 已连接"
+                : client.state === "online"
+                  ? "连接待验证"
+                  : "CLI 可用 · AI 未验证";
   async function saveConfig() {
     if (!config) return;
     await api("ai/settings", config);
@@ -461,8 +484,16 @@ export function AIChat({
             overwrite.revision !== now.revision
           : diff.baseHash !== chosen.baseHash
       ) {
-        setOverwrite({ baseHash: diff.baseHash, revision: now.revision, changedAgain: force });
-        setNotice(force ? "确认期间图稿再次变化，请重新确认覆盖" : "当前图稿已变化，可选择强制覆盖或保留当前图稿");
+        setOverwrite({
+          baseHash: diff.baseHash,
+          revision: now.revision,
+          changedAgain: force,
+        });
+        setNotice(
+          force
+            ? "确认期间图稿再次变化，请重新确认覆盖"
+            : "当前图稿已变化，可选择强制覆盖或保留当前图稿",
+        );
         return;
       }
       await addVersion({
@@ -479,6 +510,18 @@ export function AIChat({
           documentId: chosen.documentId,
         }),
       );
+      if (chosen.jobId)
+        void api(
+          "ai/history/" + chosen.jobId,
+          {
+            disposition:
+              chosen.acceptedGroups &&
+              chosen.acceptedGroups.length < chosen.groups.length
+                ? "partial"
+                : "applied",
+          },
+          "PATCH",
+        ).catch(() => setNotice("画布已应用，但历史状态更新失败"));
       setCandidate(undefined);
       resetPreview();
       setMessages((m) =>
@@ -488,10 +531,72 @@ export function AIChat({
             : v,
         ),
       );
-      setNotice(force ? "候选已强制覆盖，原稿已自动备份，可一步撤销" : "候选已应用，可一步撤销");
+      setNotice(
+        force
+          ? "候选已强制覆盖，原稿已自动备份，可一步撤销"
+          : "候选已应用，可一步撤销",
+      );
     } catch (e) {
       setOverwrite(undefined);
       onError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reviewCandidate() {
+    setBusy(true);
+    try {
+      const now = await bridge.invoke("snapshot");
+      if (now.metadata.documentId !== candidate.documentId)
+        throw Error("图稿已切换");
+      const baseXml = candidate.baseXml || now.xml;
+      const data = await (
+        await api("review/groups", {
+          baseXml,
+          candidateXml: candidate.candidateXml,
+        })
+      ).json();
+      if (doc.current !== data.documentId) return;
+      setReviewData({ ...data, jobId: candidate.jobId });
+    } catch (e) {
+      onError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function composeSelected(selected: string[]) {
+    const chosen = reviewData;
+    setBusy(true);
+    try {
+      const now = await bridge.invoke("snapshot");
+      const result = await (
+        await api("review/compose", {
+          baseXml: chosen.baseXml,
+          candidateXml: chosen.candidateXml,
+          currentXml: now.xml,
+          selected,
+        })
+      ).json();
+      if (doc.current !== chosen.documentId) return;
+      if (result.conflicts.length) {
+        setReviewData({
+          ...chosen,
+          notice: result.conflicts
+            .map(
+              (c: any) =>
+                c.message +
+                "（" +
+                (chosen.groups.find((g: any) => g.id === c.groupId)?.label ||
+                  c.groupId) +
+                "）",
+            )
+            .join("；"),
+        });
+        return;
+      }
+      setCandidate({ ...result, jobId: chosen.jobId, revision: now.revision });
+      resetPreview();
+      setNotice("已保留非冲突人工修改，请重新预览所选修改后应用");
     } finally {
       setBusy(false);
     }
@@ -533,16 +638,23 @@ export function AIChat({
           throw Error(
             "此任务的原稿与当前画布不同；请先恢复原稿，或重新发送要求",
           );
-        setCandidate({ ...r.result, revision: now.revision });
+        setCandidate({
+          ...r.result,
+          baseXml: r.baseXml,
+          jobId: r.id,
+          revision: now.revision,
+        });
         resetPreview();
         setMessages((m) => [
           ...m.slice(-11),
           { user: r.requestPrompt, assistant: r.message },
         ]);
         setJob(r);
-        setNotice(d.baseHash !== r.result.baseHash
-          ? "原稿已变化，候选已接回；预览后可选择强制覆盖"
-          : "候选已接回，请预览后应用");
+        setNotice(
+          d.baseHash !== r.result.baseHash
+            ? "原稿已变化，候选已接回；预览后可选择强制覆盖"
+            : "候选已接回，请预览后应用",
+        );
       } else {
         setPrompt(r.requestPrompt || "");
         setNotice("已取回原要求，可修改后重新发送");
@@ -572,6 +684,18 @@ export function AIChat({
     !!config && JSON.stringify(config) !== savedConfig.current;
   return (
     <>
+      {reviewData && (
+        <DiagramReview
+          bridge={bridge}
+          baseXml={reviewData.baseXml}
+          candidateXml={reviewData.candidateXml}
+          groups={reviewData.groups}
+          notice={reviewData.notice}
+          busy={busy}
+          onCompose={composeSelected}
+          onClose={() => setReviewData(undefined)}
+        />
+      )}
       {overwrite && candidate && (
         <div className="scrim">
           <section
@@ -582,8 +706,12 @@ export function AIChat({
             onKeyDown={(e) => {
               if (e.key === "Escape" && !busy) setOverwrite(undefined);
               if (e.key !== "Tab") return;
-              const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
-              const first = buttons[0], last = buttons[buttons.length - 1];
+              const buttons =
+                e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  "button:not(:disabled)",
+                );
+              const first = buttons[0],
+                last = buttons[buttons.length - 1];
               if (e.shiftKey && document.activeElement === first) {
                 e.preventDefault();
                 last?.focus();
@@ -595,15 +723,47 @@ export function AIChat({
           >
             <div className="modal-heading">
               <h2>图稿已变化</h2>
-              <button disabled={busy} onClick={() => setOverwrite(undefined)} aria-label="关闭覆盖确认">×</button>
+              <button
+                disabled={busy}
+                onClick={() => setOverwrite(undefined)}
+                aria-label="关闭覆盖确认"
+              >
+                ×
+              </button>
             </div>
-            <p className="warning">AI 候选基于较早的原稿生成。强制覆盖会用候选替换当前整张图稿，等待期间的修改不会合并。</p>
-            {overwrite.changedAgain && <p role="status">确认期间图稿再次变化，请核对后再次点击强制覆盖。</p>}
-            <p>覆盖前将自动保存当前版本，覆盖后可一步撤销，也可从版本记录恢复。</p>
+            <p className="warning">
+              AI
+              候选基于较早的原稿生成。强制覆盖会用候选替换当前整张图稿，等待期间的修改不会合并。
+            </p>
+            {overwrite.changedAgain && (
+              <p role="status">
+                确认期间图稿再次变化，请核对后再次点击强制覆盖。
+              </p>
+            )}
+            <p>
+              覆盖前将自动保存当前版本，覆盖后可一步撤销，也可从版本记录恢复。
+            </p>
             <div className="modal-actions">
-              <button disabled={busy} onClick={() => downloadCandidate(candidate.candidateXml)}>下载候选</button>
-              <button autoFocus disabled={busy} onClick={() => setOverwrite(undefined)}>保留当前图稿</button>
-              <button className="primary" disabled={busy || !ready} onClick={() => void apply(true)}>强制覆盖</button>
+              <button
+                disabled={busy}
+                onClick={() => downloadCandidate(candidate.candidateXml)}
+              >
+                下载候选
+              </button>
+              <button
+                autoFocus
+                disabled={busy}
+                onClick={() => setOverwrite(undefined)}
+              >
+                保留当前图稿
+              </button>
+              <button
+                className="primary"
+                disabled={busy || !ready}
+                onClick={() => void apply(true)}
+              >
+                强制覆盖
+              </button>
             </div>
           </section>
         </div>
@@ -656,8 +816,27 @@ export function AIChat({
           >
             最近 AI 任务
           </button>
-          <small>刷新后可接回 · 服务内保留 1 小时</small>
+          <small>近期执行状态 · 完整候选见历史</small>
         </div>
+        <AIHistoryPanel
+          api={api}
+          documentId={documentId}
+          onRecover={recover}
+          onError={onError}
+          running={running || busy}
+          onRestore={(items) =>
+            setMessages((current) =>
+              current.length
+                ? current
+                : items.map((j) => ({
+                    user: j.requestPrompt,
+                    assistant: String(
+                      j.message || j.error || "任务已中断",
+                    ).slice(0, 2000),
+                  })),
+            )
+          }
+        />
         {tasksOpen && (
           <section className="ai-task-list" aria-label="最近 AI 任务">
             {recentJobs.map((t) => (
@@ -710,7 +889,9 @@ export function AIChat({
                 </div>
               </article>
             ))}
-            {!recentJobs.length && <p>暂无任务；服务重启后记录会清空。</p>}
+            {!recentJobs.length && (
+              <p>暂无近期任务；重启前记录请打开历史与候选。</p>
+            )}
           </section>
         )}
         <div className="ai-messages" aria-live="polite">
@@ -777,6 +958,9 @@ export function AIChat({
                 ))}
               </div>
               <div className="ai-row">
+                <button disabled={busy} onClick={() => void reviewCandidate()}>
+                  审阅修改
+                </button>
                 <button disabled={busy} onClick={() => void renderCandidate()}>
                   预览候选
                 </button>
@@ -796,9 +980,15 @@ export function AIChat({
                 <button
                   disabled={busy}
                   onClick={() => {
+                    if (candidate.jobId)
+                      void api(
+                        "ai/history/" + candidate.jobId,
+                        { disposition: "discarded" },
+                        "PATCH",
+                      ).catch(onError);
                     setCandidate(undefined);
                     resetPreview();
-                    setNotice("已丢弃候选");
+                    setNotice("已丢弃候选，历史记录仍可接回");
                   }}
                 >
                   丢弃
@@ -965,9 +1155,21 @@ export function AIChat({
                   }
                 }}
               >
-                <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+                <svg
+                  width="26"
+                  height="26"
+                  viewBox="0 0 26 26"
+                  aria-hidden="true"
+                >
                   <circle cx="13" cy="13" r="13" fill="currentColor" />
-                  <rect x="8" y="8" width="10" height="10" rx="1.5" fill="white" />
+                  <rect
+                    x="8"
+                    y="8"
+                    width="10"
+                    height="10"
+                    rx="1.5"
+                    fill="white"
+                  />
                 </svg>
               </button>
             ) : (

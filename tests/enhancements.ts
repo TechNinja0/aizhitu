@@ -4,7 +4,7 @@ const server=await startServer({port:0}),browser=await chromium.launch({channel:
 const check=(s:string)=>{checks.push(s);console.log('PASS',s);};
 try{
  await page.goto(server.origin);await page.getByText('9 个节点 · 6 条连线').waitFor();const frame=page.frames()[1];const invoke=(method:string,args:any={})=>frame.evaluate(({method,args})=>(window as any).workbench.invoke(method,args),{method,args});
- const original=await invoke('snapshot');await page.getByRole('button',{name:'✦ 一键美化'}).click();await page.waitForTimeout(450);const styled=await invoke('snapshot');assert.ok(styled.revision>original.revision);
+ const original=await invoke('snapshot');await page.getByRole('button',{name:'✦ 整理连线'}).click();await page.waitForTimeout(450);const styled=await invoke('snapshot');assert.ok(styled.revision>original.revision);
  const before=validate(original.xml),after=validate(styled.xml);assert.equal(after.ok,true,JSON.stringify(after.errors));
  assert.deepEqual(before.cells!.filter(c=>c.kind==='node'),after.cells!.filter(c=>c.kind==='node'));
  assert.deepEqual(before.cells!.filter(c=>c.kind==='edge').map(c=>[c.id,c.label,c.source,c.target]),after.cells!.filter(c=>c.kind==='edge').map(c=>[c.id,c.label,c.source,c.target]));

@@ -18,6 +18,7 @@
 | [产品规格](product/PRD.md) | 当前能力、流程、验收与不支持范围 |
 | [技术设计](design/TECHNICAL_DESIGN.md) | 架构、身份比较、候选事务、编辑、存储及资源限制 |
 | [本地 AI](LOCAL_AI.md) | CLI 配置、模型、状态与分享 |
+| [IDE Agent 绘图 Skill 接入](../packages/ai-support/INSTALL.md) | 对外项目架构图 Skill 与工作台配套截图／改稿 Skill 的区别、安装与调用 |
 | [CLI 详细设计](design/LOCAL_AI_DESIGN.md) | Provider 参数、HTTP 接口和任务生命周期 |
 | [v1.1 验收报告](testing/V1_1_REPORT.md) | 本轮命令结果、功能矩阵、实际模型与适用边界 |
 | [更新记录](../CHANGELOG.md) | 版本变化 |
@@ -26,3 +27,5 @@
 | [安全说明](../SECURITY.md) | 本地数据、客户端与候选保护 |
 
 [竞品分析](product/COMPETITIVE_REVIEW.md)、[功能重整](product/ROADMAP_REVIEW.md)、[P0 报告](testing/REPORT.md)、[早期会话报告](testing/LOCAL_AI_REPORT.md)、[上一轮会话交互报告](testing/CHAT_REDESIGN_REPORT.md)保留为历史记录，不覆盖当前规格和最新验收。
+
+- [P0 产品规格](product/P0_QUALITY_REVIEW_HISTORY.md)：智能排版与交付检查、可视化改稿审阅、持久会话及压力测试验收标准。

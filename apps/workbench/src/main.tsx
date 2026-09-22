@@ -1,3 +1,4 @@
+import { QualityPanel } from "./QualityPanel";
 import { startNewDocument, useNewDocument } from "./NewDocument";
 import { SharedRoot, useSharedDocument, workspaceContext, workspaceHeaders, workspaceApi, documentId } from "./SharedWorkspace";
 import { uuid, copyText } from "./uuid";
@@ -689,7 +690,8 @@ function App() {
           <CandidateReview documentName={name} bridge={bridge} api={api} onApply={applySnapshot} onError={showError} disabled={!editable}/>
           <button disabled={!editable} title="当前仅整理连线：消除可安全拉直的多余折点，不移动节点或重排整图；有选区时只处理选区，可一步撤销" onClick={async()=>{
             try {const result=await bridge.invoke("beautify");applySnapshot(result);setToast(result.beautified ? `已优化 ${result.beautified} 条连线，可一步撤销` : "没有可安全拉直的连线，已保留原布局");}catch(error){showError(error);}
-          }}>✦ 一键美化</button>
+          }}>✦ 整理连线</button>
+          <QualityPanel bridge={bridge} api={api} onApply={applySnapshot} onError={showError} disabled={!editable} documentName={name}/>
         <button disabled={!editable} onClick={() => imageInput.current?.click()}>
           <Icon name="image" />
           插入图片

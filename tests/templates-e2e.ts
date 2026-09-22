@@ -320,7 +320,7 @@ try {
     validate((await invoke("snapshot")).xml).metadata!.documentId,
     blankShared.metadata!.documentId,
   );
-  await expect(page.locator(".shared-notice")).toContainText("已自动保存", {
+  await expect(page.locator(".shared-notice")).toContainText("已保存", {
     timeout: 10000,
   });
   await expect(page.locator(".save-state")).toHaveText("服务器图稿");

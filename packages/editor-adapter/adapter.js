@@ -197,7 +197,28 @@ import { mergeXml, equivalentXml, limitHistory } from "./collaboration.js";
       });
     };
   }
+  let reviewMode = false, highlights = [];
+  const reviewViewport = () => ({width:graph.container.clientWidth,height:graph.container.clientHeight,scale:graph.view.scale,x:(graph.container.scrollLeft+graph.container.clientWidth/2)/graph.view.scale-graph.view.translate.x,y:(graph.container.scrollTop+graph.container.clientHeight/2)/graph.view.scale-graph.view.translate.y});
   const methods = {
+    reviewSetup: () => {
+      reviewMode=true;readOnly=true;graph.setEnabled(false);document.body.classList.add("workbench-review");
+      const style=document.createElement("style");style.textContent=".workbench-review .geSidebarContainer,.workbench-review .geFormatContainer,.workbench-review .geToolbarContainer,.workbench-review .geHsplit,.workbench-review .geVsplit{display:none!important}.workbench-review .geDiagramContainer{left:0!important;right:0!important;top:0!important;bottom:0!important}";document.head.appendChild(style);
+      return reviewViewport();
+    },
+    reviewBounds: () => {const b=graph.getGraphBounds(),s=graph.view.scale,t=graph.view.translate;return {x:b.x/s-t.x,y:b.y/s-t.y,width:b.width/s,height:b.height/s,...{viewport:reviewViewport()}};},
+    reviewView: ({scale,x,y}={}) => {
+      if(Number.isFinite(scale)&&Number.isFinite(x)&&Number.isFinite(y)){
+        graph.zoomTo(Math.min(4,Math.max(.1,scale)),false);
+        graph.container.scrollLeft=(x+graph.view.translate.x)*graph.view.scale-graph.container.clientWidth/2;
+        graph.container.scrollTop=(y+graph.view.translate.y)*graph.view.scale-graph.container.clientHeight/2;
+      }
+      return reviewViewport();
+    },
+    reviewHighlight: ({changes=[]}) => {
+      highlights.forEach(h=>h.destroy());highlights=[];graph.view.validate();
+      for(const change of changes){const state=graph.view.getState(graph.model.getCell(change.id));if(!state)continue;const h=new mxCellHighlight(graph,change.color||"#3976ce",4);h.highlight(state);highlights.push(h);}
+      return {highlighted:highlights.length};
+    },
     collaborationMode: ({value, client}) => {
       graph.stopEditing(false);
       collaboration.active = !!value;
@@ -503,6 +524,9 @@ import { mergeXml, equivalentXml, limitHistory } from "./collaboration.js";
     ui.editor.undoManager.size = 100;
     document.addEventListener("input", e => { if (!readOnly && e.target.closest?.(".mxCellEditor")) send({ event: "editing" }); });
     const viewport = () => send({ event: "viewport", scale: graph.view.scale });
+    const reportReview=()=>{if(reviewMode)send({event:"reviewViewport",...reviewViewport()});};
+    graph.container.addEventListener("scroll",reportReview);
+    graph.view.addListener(mxEvent.SCALE,reportReview);
     graph.view.addListener(mxEvent.SCALE, viewport);
     graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, viewport);
     graph.container.addEventListener("wheel", e => {
@@ -666,7 +690,7 @@ import { mergeXml, equivalentXml, limitHistory } from "./collaboration.js";
       invoke: async (method, args = {}) => {
         if (!Object.prototype.hasOwnProperty.call(methods, method))
           throw Error("未知操作");
-        if (readOnly && !["capabilities", "setReadOnly", "load", "collaborationMode", "collaborationApply", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance"].includes(method)) throw Error("当前仅查看，请切换到编辑态；如无编辑权限，请联系文件所有者");
+        if (readOnly && !["capabilities", "setReadOnly", "load", "collaborationMode", "collaborationApply", "editing", "snapshot", "zoom", "select", "focus", "find", "panMode", "svg", "copyAppearance", "reviewSetup", "reviewView", "reviewHighlight", "reviewBounds"].includes(method)) throw Error("当前仅查看，请切换到编辑态；如无编辑权限，请联系文件所有者");
         return methods[method](args);
       },
     };

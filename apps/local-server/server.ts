@@ -1,3 +1,5 @@
+import { inspectQuality, planQuality } from "../../packages/document-tools/quality.ts";
+import { reviewGroups, composeReview } from "../../packages/document-tools/review.ts";
 import { extractSource } from "../../packages/document-tools/embedded.ts";
 import { compareDocuments } from "../../packages/document-tools/diff.ts";
 import express from "express";
@@ -99,8 +101,11 @@ export async function startServer({
       throw new HttpError(403, "仅管理员可以配置服务器 AI 客户端");
   };
   const ownAI = (req: any) => {
-    if (shared && aiOwners.get(req.params.id)?.owner !== actor(req).id)
+    const saved=ai.history.accessInfo(req.params.id);
+    const owner=aiOwners.get(req.params.id)?.owner || saved?.owner;
+    if (shared && owner !== actor(req).id)
       throw new HttpError(404, "任务不存在或不属于当前访问者");
+    if(workspace && saved?.workspaceDocument)workspace.access(String(saved.documentId),actor(req));
   };
   const vite = dev
     ? await (
@@ -144,7 +149,11 @@ export async function startServer({
     next();
   });
   if (workspace) {
-    sharedRoutes(app, workspace);
+    sharedRoutes(app, workspace, (document, xml, creator) => {
+      if(typeof xml!=="string")return;
+      const source=validate(xml).metadata?.documentId;
+      if(source)ai.history.linkDocument(creator.id,source,document.id);
+    });
     privateAccountRoutes(app, workspace, templates);
   }
   const aiRoute = (fn: (req: any) => unknown) => async (req: any, res: any) => {
@@ -254,7 +263,7 @@ export async function startServer({
       }
       for (const id of aiOwners.keys())
         if (!ai.jobs.has(id)) aiOwners.delete(id);
-      const job = ai.generate(req.body);
+      const job = ai.generate(req.body, actor(req).id, !!(workspace && documentId));
       aiOwners.set(job.id, { owner: actor(req).id, documentId });
       return job;
     }),
@@ -275,7 +284,9 @@ export async function startServer({
     "/api/ai/jobs/:id",
     aiRoute((req) => {
       ownAI(req);
-      return ai.view(req.params.id);
+      const job = ai.view(req.params.id);
+      if (workspace && job.workspaceDocument) workspace.access(job.documentId!, actor(req));
+      return job;
     }),
   );
   app.delete(
@@ -285,6 +296,27 @@ export async function startServer({
       return { cancelled: ai.cancel(req.params.id) };
     }),
   );
+  const historyAccess = (req: any) => {
+    const job = ai.history.get(req.params.id, actor(req).id);
+    if (workspace && job.workspaceDocument) workspace.access(job.documentId, actor(req));
+    return job;
+  };
+  app.get("/api/ai/history", aiRoute(req => {
+    const id=String(req.query.documentId || "");
+    if (!id || id.length>200) throw Error("缺少图稿身份");
+    if(workspace && ai.history.requiresDocumentAccess(actor(req).id,id))workspace.access(id,actor(req));
+    const result=ai.history.list(actor(req).id,id,Number(req.query.page||1));
+    return result;
+  }));
+  app.get("/api/ai/history/settings", aiRoute(req=>ai.history.settings(actor(req).id)));
+  app.post("/api/ai/history/settings", aiRoute(req=>ai.history.settings(actor(req).id,req.body.days)));
+  app.get("/api/ai/history/:id", aiRoute(req=>{const {owner,...job}=historyAccess(req);return job;}));
+  app.patch("/api/ai/history/:id", aiRoute(req=>{historyAccess(req);const {owner,...job}=ai.history.update(req.params.id,actor(req).id,req.body);return job;}));
+  app.delete("/api/ai/history/:id", aiRoute(req=>{historyAccess(req);ai.history.remove(req.params.id,actor(req).id);ai.jobs.delete(req.params.id);return {deleted:true};}));
+  app.post("/api/quality/check", aiRoute(req=>inspectQuality(req.body.xml)));
+  app.post("/api/quality/plan", aiRoute(req=>planQuality(req.body.xml,req.body.options)));
+  app.post("/api/review/groups", aiRoute(req=>reviewGroups(req.body.baseXml,req.body.candidateXml)));
+  app.post("/api/review/compose", aiRoute(req=>composeReview(req.body.baseXml,req.body.candidateXml,req.body.currentXml,req.body.selected)));
   app.post("/api/hash", (req, res) =>
     res.json({
       sha256: createHash("sha256")

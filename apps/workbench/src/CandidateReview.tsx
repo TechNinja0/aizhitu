@@ -1,3 +1,4 @@
+import { DiagramReview } from "./DiagramReview";
 import { CandidatePreview, downloadCandidate } from "./CandidatePreview";
 import { addVersion } from "./versions";
 import React, { useRef, useState, useEffect } from "react";
@@ -17,6 +18,7 @@ export function CandidateReview({
   onError: (e: any) => void;
   disabled: boolean;
 }) {
+  const [reviewData, setReviewData] = useState<any>();
   const file = useRef<HTMLInputElement>(null);
   const [candidate, setCandidate] = useState<any>(null),
     [busy, setBusy] = useState(false),
@@ -45,7 +47,12 @@ export function CandidateReview({
       setPreview(undefined);
       setPreviewVerified(false);
       setPreviewError("");
-      setCandidate({ ...result, revision: current.revision, name: f.name });
+      setCandidate({
+        ...result,
+        baseXml: current.xml,
+        revision: current.revision,
+        name: f.name,
+      });
     } catch (e) {
       onError(e);
     } finally {
@@ -94,6 +101,42 @@ export function CandidateReview({
   }
   return (
     <>
+      {reviewData && (
+        <DiagramReview
+          bridge={bridge}
+          baseXml={reviewData.baseXml}
+          candidateXml={reviewData.candidateXml}
+          groups={reviewData.groups}
+          busy={busy}
+          onClose={() => setReviewData(undefined)}
+          onCompose={async (selected) => {
+            setBusy(true);
+            try {
+              const now = await bridge.invoke("snapshot");
+              const r = await (
+                await api("review/compose", {
+                  baseXml: reviewData.baseXml,
+                  candidateXml: reviewData.candidateXml,
+                  currentXml: now.xml,
+                  selected,
+                })
+              ).json();
+              if (r.conflicts.length)
+                throw Error(r.conflicts.map((c: any) => c.message).join("；"));
+              setCandidate({
+                ...r,
+                revision: now.revision,
+                name: candidate.name,
+              });
+              setPreview(undefined);
+              setPreviewVerified(false);
+              setReviewData(undefined);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
       <button disabled={disabled || busy} onClick={() => file.current?.click()}>
         比较 AI 候选
       </button>
@@ -177,6 +220,28 @@ export function CandidateReview({
               />
             )}
             <div className="modal-actions">
+              <button
+                disabled={busy || !candidate.sameDocument}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    setReviewData(
+                      await (
+                        await api("review/groups", {
+                          baseXml: candidate.baseXml,
+                          candidateXml: candidate.candidateXml,
+                        })
+                      ).json(),
+                    );
+                  } catch (e) {
+                    onError(e);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                审阅修改
+              </button>
               <button
                 onClick={() =>
                   downloadCandidate(candidate.candidateXml, candidate.name)

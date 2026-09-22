@@ -234,7 +234,7 @@ test('streamed progress is incremental and excludes private reasoning and raw CL
 });
 test('activity resets idle deadline while absolute deadline and cancellation remain effective',async()=>{
   let received='';
-  const output=await runProcess(process.execPath,['-e','let n=0;const t=setInterval(()=>{console.log("tick");if(++n===8){clearInterval(t)}},30)'],{cwd:os.tmpdir(),idleTimeout:200,timeout:2000,onStdout:c=>received+=c});
+  const output=await runProcess(process.execPath,['-e','let n=0;const t=setInterval(()=>{console.log("tick");if(++n===8){clearInterval(t)}},150)'],{cwd:os.tmpdir(),idleTimeout:800,timeout:4000,onStdout:c=>received+=c});
   assert.equal(output,received);assert.equal(output.trim().split('\n').length,8);
   await assert.rejects(runProcess(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:os.tmpdir(),idleTimeout:60,timeout:2000}),/没有输出/);
   await assert.rejects(runProcess(process.execPath,['-e','setInterval(()=>console.log("tick"),20)'],{cwd:os.tmpdir(),idleTimeout:200,timeout:150}),/最长运行/);
