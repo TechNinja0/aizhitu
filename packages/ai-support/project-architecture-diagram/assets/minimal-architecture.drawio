@@ -1,0 +1,31 @@
+<mxfile compressed="false">
+  <diagram id="page-1" name="架构语法示例">
+    <mxGraphModel grid="1" gridSize="10" page="0">
+      <root>
+        <object id="0" dw_meta="{&quot;profileVersion&quot;:&quot;1.0&quot;,&quot;documentId&quot;:&quot;acfe98f0-bf55-4fbf-b4a4-f2f19b485903&quot;,&quot;generationMode&quot;:&quot;manual&quot;,&quot;reviewItems&quot;:[],&quot;provenance&quot;:{&quot;skill&quot;:&quot;project-architecture-diagram&quot;,&quot;view&quot;:&quot;syntax-example&quot;}}"><mxCell/></object>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="架构语法示例 · 内容需替换为项目证据" vertex="1" parent="1" style="text;html=0;whiteSpace=wrap;fontFamily=Noto Sans SC;fontSize=20;fontStyle=1;align=left;fillColor=none;strokeColor=none;">
+          <mxGeometry x="40" y="20" width="860" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="system" value="示例系统边界" vertex="1" parent="1" style="swimlane;horizontal=1;startSize=32;container=1;collapsible=0;html=0;fontFamily=Noto Sans SC;fontSize=16;fillColor=#f1f6f2;strokeColor=#648373;">
+          <mxGeometry x="40" y="100" width="620" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="entry" value="示例入口" vertex="1" parent="system" style="rounded=1;whiteSpace=wrap;html=0;fontFamily=Noto Sans SC;fontSize=14;fillColor=#ffffff;strokeColor=#648373;">
+          <mxGeometry x="30" y="80" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="module" value="示例业务模块" vertex="1" parent="system" style="rounded=1;whiteSpace=wrap;html=0;fontFamily=Noto Sans SC;fontSize=14;fillColor=#e3f0e9;strokeColor=#648373;">
+          <mxGeometry x="370" y="80" width="180" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="store" value="示例存储" vertex="1" parent="1" style="shape=cylinder;whiteSpace=wrap;html=0;fontFamily=Noto Sans SC;fontSize=14;fillColor=#eaf1f7;strokeColor=#7196b0;">
+          <mxGeometry x="790" y="170" width="160" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="entry-module" value="调用" edge="1" parent="system" source="entry" target="module" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;html=0;fontFamily=Noto Sans SC;fontSize=12;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="module-store" value="读写" edge="1" parent="1" source="module" target="store" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;html=0;fontFamily=Noto Sans SC;fontSize=12;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

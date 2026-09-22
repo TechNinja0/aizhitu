@@ -4,7 +4,7 @@
 
 在本地画布中调用你已有的 Codex/Qoder CLI，把文字或截图生成可编辑的 `.drawio` 文件，预览修改、自由编辑和导出。也可继续使用外部 Skill 生成文件。
 
-AI智图基于 [draw.io](https://github.com/jgraph/drawio) 内核，提供本地工作台、`diagram-drawing` Skill、文件校验和渲染 CLI。适合需要把截图重画成可维护图稿的开发者、技术写作者和方案设计人员。
+AI智图基于 [draw.io](https://github.com/jgraph/drawio) 内核，提供本地工作台、对外独立的 `project-architecture-diagram` Skill、工作台配套的 `diagram-drawing` Skill，以及文件校验和渲染 CLI。适合需要梳理项目架构或把截图重画成可维护图稿的开发者、技术写作者和方案设计人员。
 
 > AI 通过 Codex、Qoder 等外部客户端使用。工作台不内置模型，不提供 AI 账号、API 或额度。安装完成后的编辑、校验和导出在本机执行；外部 AI 的联网和数据处理由所用客户端决定。
 
@@ -87,7 +87,16 @@ node bin/zhitu.mjs --lan-host 192.168.1.10 --port 4317 --editor-port 4318
 
 推荐从页面 **设置 → AI 客户端** 检测本机 CLI，完成一次连接测试，再打开 **AI 会话**。支持当前图、选区改稿和重新生成；候选经校验、差异预览后手动应用，支持一步撤销和过期基线拦截。会话显示实时执行摘要与耗时，输入框底部选择 CLI / Qoder 模型，Codex 使用本机配置。详见 [本地 AI 配置、状态与分享](docs/LOCAL_AI.md)。
 
-以下是兼容保留的外部 AI 文件交换方式：
+也可以在其他 IDE Agent 中生成文件，再用工作台打开。按场景选择两个不同的 Skill，安装方式见 **[AI 客户端接入说明](packages/ai-support/INSTALL.md)**：
+
+- **分析业务项目画架构图（对外）**：使用 [project-architecture-diagram](packages/ai-support/project-architecture-diagram/SKILL.md)。可以将整个 Skill 目录独立复制到 Cursor、Qoder、Codex 的目标项目，读取源码和文档，交付可编辑 `.drawio` 和证据说明；不依赖工作台安装，校验／渲染 CLI 可选。
+- **截图重建或已有图稿改稿（工作台配套／对内维护）**：使用 [diagram-drawing](packages/ai-support/diagram-drawing/SKILL.md)。保留原有工作流，依赖完整工作台及 CLI，外部 IDE 仍可链接调用。
+
+项目架构图示例：
+
+> 使用 project-architecture-diagram Skill，根据当前项目源码和技术文档绘制模块架构图。每个组件和连接关系提供证据，将推断标为待核对。输出到 docs/architecture，交付 .drawio、证据说明，以及实际可用的校验和预览结果。
+
+截图重建示例：
 
 先按 **[AI 客户端接入说明](packages/ai-support/INSTALL.md)** 安装或链接 `diagram-drawing` Skill，再将截图附到支持图片输入、文件读写和本地命令的 AI 客户端中：
 
